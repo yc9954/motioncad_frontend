@@ -9,7 +9,7 @@ import {
   Loader2, Sparkles, XCircle, Download, Plus, Image as ImageIcon,
   Grid3x3, Upload, X, Trash2, Copy, Eye, EyeOff, Lock, Unlock,
   Move, RotateCcw, Maximize2, Layers, FolderPlus, Save, FileDown,
-  ChevronDown, ChevronRight, GripVertical
+  ChevronDown, ChevronRight, GripVertical, Camera
 } from "lucide-react";
 import { toast } from "sonner";
 import { generate3DModel, checkTaskStatus } from "@/lib/tripo-api";
@@ -89,6 +89,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [transformMode, setTransformMode] = useState<"position" | "rotation" | "scale">("position");
   const [dioramaName, setDioramaName] = useState("새 디오라마");
   const [savedDioramas, setSavedDioramas] = useState<Diorama[]>([]);
+  const [webcamEnabled, setWebcamEnabled] = useState(false);
 
   // 첫 번째 선택된 모델 (단일 선택용)
   const selectedModelId = selectedModelIds.length === 1 ? selectedModelIds[0] : null;
@@ -1618,6 +1619,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               onModelDrag={handleModelPositionUpdate}
               onModelRotate={handleModelRotationUpdate}
               onModelScale={handleModelScaleUpdate}
+              webcamEnabled={webcamEnabled}
             />
             {/* 선택된 모델 삭제 버튼 */}
             {selectedModelId && (
@@ -1795,34 +1797,50 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               <h3 className="text-sm font-semibold mb-3">변환 (Transform)</h3>
 
               {/* 변환 모드 선택 */}
-              <div className="flex gap-1 mb-4">
+              <div className="space-y-2 mb-4">
+                {/* Webcam Toggle */}
                 <Button
                   size="sm"
-                  variant={transformMode === "position" ? "default" : "outline"}
-                  className="flex-1 h-7"
-                  onClick={() => setTransformMode("position")}
+                  variant={webcamEnabled ? "default" : "outline"}
+                  className="w-full h-8"
+                  onClick={() => {
+                    setWebcamEnabled(!webcamEnabled);
+                    toast.info(webcamEnabled ? '모션 제어 비활성화' : '모션 제어 활성화 - 손 제스처로 객체를 조작할 수 있습니다');
+                  }}
                 >
-                  <Move className="h-3 w-3 mr-1" />
-                  위치
+                  <Camera className={`h-4 w-4 mr-2 ${webcamEnabled ? 'text-white' : ''}`} />
+                  {webcamEnabled ? '모션 제어 ON' : '모션 제어 OFF'}
                 </Button>
-                <Button
-                  size="sm"
-                  variant={transformMode === "rotation" ? "default" : "outline"}
-                  className="flex-1 h-7"
-                  onClick={() => setTransformMode("rotation")}
-                >
-                  <RotateCcw className="h-3 w-3 mr-1" />
-                  회전
-                </Button>
-                <Button
-                  size="sm"
-                  variant={transformMode === "scale" ? "default" : "outline"}
-                  className="flex-1 h-7"
-                  onClick={() => setTransformMode("scale")}
-                >
-                  <Maximize2 className="h-3 w-3 mr-1" />
-                  크기
-                </Button>
+                
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant={transformMode === "position" ? "default" : "outline"}
+                    className="flex-1 h-7"
+                    onClick={() => setTransformMode("position")}
+                  >
+                    <Move className="h-3 w-3 mr-1" />
+                    위치
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={transformMode === "rotation" ? "default" : "outline"}
+                    className="flex-1 h-7"
+                    onClick={() => setTransformMode("rotation")}
+                  >
+                    <RotateCcw className="h-3 w-3 mr-1" />
+                    회전
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={transformMode === "scale" ? "default" : "outline"}
+                    className="flex-1 h-7"
+                    onClick={() => setTransformMode("scale")}
+                  >
+                    <Maximize2 className="h-3 w-3 mr-1" />
+                    크기
+                  </Button>
+                </div>
               </div>
 
               {/* 위치 컨트롤 */}

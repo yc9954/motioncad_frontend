@@ -1,4 +1,9 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { HandGestureController } from '@/lib/hand-gesture-control';
+import { isPinching, isSpiderman, Landmark, WorldLandmark } from '@/lib/gesture-recognition';
+import { toast } from 'sonner';
+import { Hands } from '@mediapipe/hands';
+import { Camera } from '@mediapipe/camera_utils';
 
 interface Unified3DSceneProps {
   models: Array<{
@@ -16,6 +21,7 @@ interface Unified3DSceneProps {
   onModelDrag?: (modelId: string, position: { x: number; y: number; z: number }) => void;
   onModelRotate?: (modelId: string, rotation: { x: number; y: number; z: number }) => void;
   onModelScale?: (modelId: string, scale: number) => void;
+  webcamEnabled?: boolean;
 }
 
 export function Unified3DScene({
@@ -26,6 +32,7 @@ export function Unified3DScene({
   onModelDrag,
   onModelRotate,
   onModelScale,
+  webcamEnabled = false,
 }: Unified3DSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<any>(null);
@@ -39,6 +46,14 @@ export function Unified3DScene({
   const mouseRef = useRef<any>(null);
   const isDraggingGizmoRef = useRef(false);
   const [threeLoaded, setThreeLoaded] = useState(false);
+  const gestureControllerRef = useRef<HandGestureController | null>(null);
+  const handsRef = useRef<any>(null);
+  const cameraRefForGesture = useRef<any>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const targetPositionRef = useRef<{ x: number; y: number; z: number } | null>(null);
+  const targetRotationRef = useRef<{ x: number; y: number } | null>(null);
+  const targetScaleRef = useRef<number | null>(null);
 
   // 콜백을 ref에 저장하여 항상 최신 값 참조
   const callbacksRef = useRef({
@@ -128,11 +143,19 @@ export function Unified3DScene({
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+    // Shadow map 설정
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.shadowMap.autoUpdate = true;
+    renderer.shadowMap.needsUpdate = true;
+    // Three.js r128에서는 outputEncoding 대신 colorSpace 사용
+    if (renderer.outputEncoding !== undefined) {
+      renderer.outputEncoding = THREE.sRGBEncoding;
+    }
+    if (renderer.toneMapping !== undefined) {
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.2;
+    }
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -200,14 +223,21 @@ export function Unified3DScene({
     const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1);
     directionalLight1.position.set(5, 10, 5);
     directionalLight1.castShadow = true;
-    directionalLight1.shadow.mapSize.width = 2048;
-    directionalLight1.shadow.mapSize.height = 2048;
-    directionalLight1.shadow.camera.near = 0.5;
-    directionalLight1.shadow.camera.far = 50;
-    directionalLight1.shadow.camera.left = -20;
-    directionalLight1.shadow.camera.right = 20;
-    directionalLight1.shadow.camera.top = 20;
-    directionalLight1.shadow.camera.bottom = -20;
+    // 그림자 맵 해상도 증가
+    directionalLight1.shadow.mapSize.width = 4096;
+    directionalLight1.shadow.mapSize.height = 4096;
+    directionalLight1.shadow.camera.near = 0.1;
+    directionalLight1.shadow.camera.far = 100;
+    directionalLight1.shadow.camera.left = -30;
+    directionalLight1.shadow.camera.right = 30;
+    directionalLight1.shadow.camera.top = 30;
+    directionalLight1.shadow.camera.bottom = -30;
+    // 그림자 품질 개선
+    directionalLight1.shadow.bias = -0.0001;
+    directionalLight1.shadow.normalBias = 0.02;
+    directionalLight1.shadow.radius = 4;
+    // 그림자 업데이트 강제
+    directionalLight1.shadow.needsUpdate = true;
     scene.add(directionalLight1);
 
     const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
@@ -215,22 +245,30 @@ export function Unified3DScene({
     scene.add(directionalLight2);
 
     // === 작업대 (Workbench/Ground Plane) ===
-    const gridHelper = new THREE.GridHelper(20, 20, 0xcccccc, 0xe0e0e0);
+    // 그리드 헬퍼 - 훨씬 촘촘하게 설정 (40x40 그리드)
+    const gridHelper = new THREE.GridHelper(20, 40, 0x888888, 0xcccccc);
     gridHelper.position.y = 0;
+    gridHelper.material.opacity = 0.8;
+    gridHelper.material.transparent = true;
     scene.add(gridHelper);
 
+    // 평면 지면
     const groundGeometry = new THREE.PlaneGeometry(20, 20);
     const groundMaterial = new THREE.MeshStandardMaterial({
-      color: 0xfafafa,
+      color: 0xf5f5f5,
       roughness: 0.9,
       metalness: 0.0,
     });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.01;
+    ground.position.y = 0;
     ground.receiveShadow = true;
+    ground.castShadow = false; // 지면은 그림자를 만들지 않음
     ground.name = 'ground';
     scene.add(ground);
+    
+    // 그림자 카메라 위치 업데이트
+    directionalLight1.shadow.camera.updateProjectionMatrix();
 
     // 축 표시 (원점에)
     const axesHelper = new THREE.AxesHelper(2);
@@ -247,10 +285,84 @@ export function Unified3DScene({
     raycasterRef.current = raycaster;
     mouseRef.current = new THREE.Vector2();
 
-    // Animation loop
+    // Store camera reference for gesture control
+    cameraRefForGesture.current = camera;
+
+    // Animation loop with gesture control smoothing
+    const clock = new THREE.Clock();
     const animate = () => {
-      requestAnimationFrame(animate);
+      animationFrameRef.current = requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      const damping = 5.0 * delta;
+
       orbitControls.update();
+      
+      // 그림자 맵 지속 업데이트
+      if (renderer.shadowMap.enabled) {
+        // 모델이 있을 때만 그림자 업데이트
+        if (modelsRef.current.size > 0) {
+          renderer.shadowMap.needsUpdate = true;
+          directionalLight1.shadow.needsUpdate = true;
+        }
+      }
+
+      // Apply gesture-controlled transforms with smoothing
+      if (targetPositionRef.current && selectedModelId) {
+        const modelGroup = modelsRef.current.get(selectedModelId);
+        if (modelGroup) {
+          const currentPos = modelGroup.position;
+          const targetPos = targetPositionRef.current;
+          currentPos.lerp(
+            new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z),
+            damping
+          );
+          if (callbacksRef.current.onModelDrag) {
+            callbacksRef.current.onModelDrag(selectedModelId, {
+              x: currentPos.x,
+              y: currentPos.y,
+              z: currentPos.z,
+            });
+          }
+        }
+      }
+
+      if (targetRotationRef.current && selectedModelId) {
+        const modelGroup = modelsRef.current.get(selectedModelId);
+        if (modelGroup) {
+          const targetEuler = new THREE.Euler(
+            targetRotationRef.current.x,
+            targetRotationRef.current.y,
+            0,
+            'XYZ'
+          );
+          const targetQuaternion = new THREE.Quaternion().setFromEuler(targetEuler);
+          modelGroup.quaternion.slerp(targetQuaternion, damping);
+          if (callbacksRef.current.onModelRotate) {
+            callbacksRef.current.onModelRotate(selectedModelId, {
+              x: modelGroup.rotation.x,
+              y: modelGroup.rotation.y,
+              z: modelGroup.rotation.z,
+            });
+          }
+        }
+      }
+
+      if (targetScaleRef.current !== null && selectedModelId) {
+        const modelGroup = modelsRef.current.get(selectedModelId);
+        if (modelGroup) {
+          const currentScale = modelGroup.scale.x;
+          const smoothScale = THREE.MathUtils.lerp(
+            currentScale,
+            targetScaleRef.current,
+            damping
+          );
+          modelGroup.scale.set(smoothScale, smoothScale, smoothScale);
+          if (callbacksRef.current.onModelScale) {
+            callbacksRef.current.onModelScale(selectedModelId, smoothScale);
+          }
+        }
+      }
+
       renderer.render(scene, camera);
     };
     animate();
@@ -320,6 +432,9 @@ export function Unified3DScene({
           containerRef.current.removeChild(renderer.domElement);
         }
       }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
       transformControls.dispose();
       renderer.dispose();
     };
@@ -360,21 +475,41 @@ export function Unified3DScene({
 
           modelGroup.traverse((child: any) => {
             if (child.isMesh) {
+              // 그림자 설정 강제 적용
               child.castShadow = true;
               child.receiveShadow = true;
+              
+              // 그림자가 제대로 표시되도록 추가 설정
+              if (child.geometry) {
+                child.geometry.computeBoundingBox();
+                child.geometry.computeBoundingSphere();
+              }
+              
               if (child.material) {
                 if (Array.isArray(child.material)) {
                   child.material.forEach((mat: any) => {
                     if (mat.map) mat.map.anisotropy = 16;
                     mat.needsUpdate = true;
+                    // 그림자 관련 속성 확인
+                    if (mat.shadowSide !== undefined) {
+                      mat.shadowSide = THREE.FrontSide;
+                    }
                   });
                 } else {
                   if (child.material.map) child.material.map.anisotropy = 16;
                   child.material.needsUpdate = true;
+                  // 그림자 관련 속성 확인
+                  if (child.material.shadowSide !== undefined) {
+                    child.material.shadowSide = THREE.FrontSide;
+                  }
                 }
               }
             }
           });
+          
+          // 모델 그룹 자체도 그림자 설정
+          modelGroup.castShadow = true;
+          modelGroup.receiveShadow = true;
 
           sceneRef.current.add(modelGroup);
           modelsRef.current.set(model.id, modelGroup);
@@ -465,6 +600,239 @@ export function Unified3DScene({
     if (!threeLoaded || !transformControlsRef.current) return;
     transformControlsRef.current.setMode(transformMode);
   }, [transformMode, threeLoaded]);
+
+  // Initialize MediaPipe Hands and gesture control
+  useEffect(() => {
+    if (!webcamEnabled || !threeLoaded || !cameraRefForGesture.current) {
+      // Cleanup when disabled
+      if (videoRef.current?.srcObject) {
+        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+        tracks.forEach((track: MediaStreamTrack) => track.stop());
+      }
+      if (handsRef.current) {
+        handsRef.current.close();
+        handsRef.current = null;
+      }
+      targetPositionRef.current = null;
+      targetRotationRef.current = null;
+      targetScaleRef.current = null;
+      return;
+    }
+
+    let cleanup: (() => void) | null = null;
+
+    const loadMediaPipe = async () => {
+      try {
+        console.log('[Hand Gesture] Starting MediaPipe initialization...');
+        
+        // MediaPipe Hands는 이미 import로 로드되었습니다
+        console.log('[Hand Gesture] MediaPipe Hands available via npm');
+
+        // Initialize Hands
+        const hands = new Hands({
+          locateFile: (file: string) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+          }
+        });
+
+        hands.setOptions({
+          maxNumHands: 2,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.7,
+          minTrackingConfidence: 0.7
+        });
+
+        console.log('[Hand Gesture] Hands initialized');
+
+        // Initialize gesture controller
+        if (!cameraRefForGesture.current) {
+          throw new Error('Camera not initialized');
+        }
+        const gestureController = new HandGestureController(cameraRefForGesture.current);
+        gestureControllerRef.current = gestureController;
+        console.log('[Hand Gesture] Gesture controller initialized');
+
+        // Get webcam stream
+        console.log('[Hand Gesture] Requesting webcam access...');
+        const video = document.createElement('video');
+        video.style.display = 'none';
+        video.setAttribute('playsinline', '');
+        video.setAttribute('autoplay', '');
+        video.setAttribute('muted', '');
+        document.body.appendChild(video);
+        videoRef.current = video;
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            width: 640, 
+            height: 480,
+            facingMode: 'user'
+          }
+        });
+        console.log('[Hand Gesture] Webcam access granted');
+        video.srcObject = stream;
+        await video.play();
+        console.log('[Hand Gesture] Video playing');
+
+        // Process hand tracking results
+        hands.onResults((results: any) => {
+          if (!gestureControllerRef.current) {
+            console.warn('[Hand Gesture] Gesture controller not available');
+            return;
+          }
+          
+          if (!selectedModelId) {
+            // No model selected, skip processing
+            return;
+          }
+
+          const { multiHandLandmarks, multiHandWorldLandmarks } = results;
+          if (!multiHandLandmarks || multiHandLandmarks.length === 0) {
+            targetPositionRef.current = null;
+            targetRotationRef.current = null;
+            targetScaleRef.current = null;
+            return;
+          }
+
+          console.log(`[Hand Gesture] Detected ${multiHandLandmarks.length} hand(s)`);
+
+          // Convert landmarks to our format
+          const convertLandmarks = (landmarks: any[]): Landmark[] => {
+            return landmarks.map((lm: any) => ({
+              x: lm.x,
+              y: lm.y,
+              z: lm.z || 0,
+            }));
+          };
+
+          const convertWorldLandmarks = (landmarks: any[]): WorldLandmark[] => {
+            return landmarks.map((lm: any) => ({
+              x: lm.x,
+              y: lm.y,
+              z: lm.z || 0,
+            }));
+          };
+
+          // Priority: Double Pinch (scaling) > Single Pinch (movement) > Spider-Man (rotation)
+          const pinchingHands: Landmark[][] = [];
+          const worldPinchingHands: WorldLandmark[][] = [];
+          let rotationHand: Landmark[] | null = null;
+
+          multiHandLandmarks.forEach((landmarks: any[], index: number) => {
+            const converted = convertLandmarks(landmarks);
+            if (isPinching(converted)) {
+              pinchingHands.push(converted);
+              if (multiHandWorldLandmarks && multiHandWorldLandmarks[index]) {
+                worldPinchingHands.push(convertWorldLandmarks(multiHandWorldLandmarks[index]));
+              }
+            } else if (isSpiderman(converted)) {
+              rotationHand = converted;
+            }
+          });
+
+          // Handle gestures based on priority
+          if (pinchingHands.length === 2 && worldPinchingHands.length === 2) {
+            // Double Pinch - Scaling
+            console.log('[Hand Gesture] Double pinch detected - scaling');
+            const scale = gestureControllerRef.current.handleScaling(
+              pinchingHands[0],
+              pinchingHands[1]
+            );
+            if (scale !== null) {
+              targetScaleRef.current = scale;
+              targetPositionRef.current = null;
+              targetRotationRef.current = null;
+              console.log(`[Hand Gesture] Target scale: ${scale}`);
+            }
+          } else if (pinchingHands.length === 1 && worldPinchingHands.length === 1) {
+            // Single Pinch - Movement
+            console.log('[Hand Gesture] Single pinch detected - movement');
+            // 현재 선택된 모델의 위치 가져오기
+            let currentObjectPosition: { x: number; y: number; z: number } | undefined;
+            if (selectedModelId) {
+              const modelGroup = modelsRef.current.get(selectedModelId);
+              if (modelGroup) {
+                currentObjectPosition = {
+                  x: modelGroup.position.x,
+                  y: modelGroup.position.y,
+                  z: modelGroup.position.z,
+                };
+              }
+            }
+            const position = gestureControllerRef.current.handleMovement(
+              pinchingHands[0],
+              worldPinchingHands[0],
+              currentObjectPosition
+            );
+            if (position) {
+              targetPositionRef.current = position;
+              targetScaleRef.current = null;
+              targetRotationRef.current = null;
+              console.log(`[Hand Gesture] Target position:`, position);
+            }
+          } else if (rotationHand) {
+            // Spider-Man - Rotation
+            console.log('[Hand Gesture] Spider-Man gesture detected - rotation');
+            const rotation = gestureControllerRef.current.handleRotation(rotationHand);
+            if (rotation) {
+              targetRotationRef.current = rotation;
+              targetPositionRef.current = null;
+              targetScaleRef.current = null;
+              console.log(`[Hand Gesture] Target rotation:`, rotation);
+            }
+          } else {
+            // No active gesture
+            targetPositionRef.current = null;
+            targetRotationRef.current = null;
+            targetScaleRef.current = null;
+          }
+        });
+
+        // Start processing video
+        console.log('[Hand Gesture] Starting camera processing...');
+        const camera = new Camera(video, {
+          onFrame: async () => {
+            try {
+              await hands.send({ image: video });
+            } catch (error) {
+              console.error('[Hand Gesture] Error sending frame to Hands:', error);
+            }
+          },
+          width: 640,
+          height: 480
+        });
+        camera.start();
+        console.log('[Hand Gesture] Camera started');
+
+        handsRef.current = hands;
+        console.log('[Hand Gesture] MediaPipe setup complete!');
+
+        cleanup = () => {
+          camera.stop();
+          if (video.srcObject) {
+            const tracks = (video.srcObject as MediaStream).getTracks();
+            tracks.forEach((track: MediaStreamTrack) => track.stop());
+          }
+          if (video.parentNode) {
+            video.parentNode.removeChild(video);
+          }
+          gestureControllerRef.current?.reset();
+          hands.close();
+        };
+      } catch (error) {
+        console.error('[Hand Gesture] Failed to initialize MediaPipe Hands:', error);
+        toast.error('모션 제어 초기화 실패', {
+          description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+        });
+      }
+    };
+
+    loadMediaPipe();
+
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [webcamEnabled, threeLoaded, selectedModelId]);
 
   // Highlight selected model
   useEffect(() => {
