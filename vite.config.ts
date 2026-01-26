@@ -80,6 +80,35 @@ export default defineConfig({
           });
         },
       },
+      // 백엔드 API 프록시 추가
+      '/api': {
+        target: 'https://f76640308ac2.ngrok-free.app',
+        changeOrigin: true,
+        secure: false,
+        configure: (proxy, _options) => {
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            // ngrok-skip-browser-warning 헤더 추가
+            proxyReq.setHeader('ngrok-skip-browser-warning', 'true');
+            
+            // 클라이언트에서 보낸 헤더 전달
+            if (req.headers['authorization']) {
+              proxyReq.setHeader('Authorization', req.headers['authorization']);
+            }
+          });
+          
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            // CORS 헤더 추가
+            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS';
+            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, ngrok-skip-browser-warning';
+            proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+          });
+          
+          proxy.on('error', (err, req, res) => {
+            console.error('[Backend Proxy] Error:', err);
+          });
+        },
+      },
     },
   },
 })

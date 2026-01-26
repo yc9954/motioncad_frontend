@@ -1,18 +1,23 @@
 import { useState, useEffect } from 'react';
 import { LandingPage } from '@/app/components/landing-page';
 import { DashboardPage } from '@/app/components/dashboard-page';
+import { LoginPage } from '@/app/components/login-page';
 import { TopNavigationBar } from '@/app/components/top-navigation-bar';
 import { PartsLibrary, Part } from '@/app/components/parts-library';
 import { Canvas3DViewport } from '@/app/components/canvas-3d-viewport';
 import { PropertiesPanel, TransformValues } from '@/app/components/properties-panel';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
+import { authApi } from '@/lib/api';
 
 const GESTURES = ['None', 'Open Palm', 'Pinch', 'Point', 'Grab', 'Zoom'];
 
 export default function App() {
+  // 초기 상태: 항상 랜딩 페이지에서 시작
+  const [isAuthenticated, setIsAuthenticated] = useState(() => authApi.isAuthenticated());
   const [showLanding, setShowLanding] = useState(true);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
   const [webcamEnabled, setWebcamEnabled] = useState(false);
   const [handTrackingActive, setHandTrackingActive] = useState(false);
   const [gridSnapEnabled, setGridSnapEnabled] = useState(true);
@@ -149,11 +154,34 @@ export default function App() {
     });
   };
 
-  // Show landing page
-  if (showLanding) {
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+    setShowLogin(false);
+    setShowLanding(false);
+    setShowDashboard(true);
+  };
+
+  const handleGetStartedWithLogin = () => {
+    // 개발 단계: 로그인 없이 바로 대시보드로 이동
+    // if (!isAuthenticated) {
+    //   setShowLogin(true);
+    //   setShowLanding(false);
+    // } else {
+    //   handleGetStarted();
+    // }
+    handleGetStarted();
+  };
+
+  // Show login page
+  if (showLogin) {
     return (
       <>
-        <LandingPage onGetStarted={handleGetStarted} />
+        <LoginPage 
+          onLoginSuccess={handleLoginSuccess}
+          onNavigateToSignup={() => {
+            toast.info("회원가입 기능은 곧 추가될 예정입니다.");
+          }}
+        />
         <Toaster 
           position="bottom-right"
           toastOptions={{
@@ -168,11 +196,48 @@ export default function App() {
     );
   }
 
+  const handleShowLogin = () => {
+    setShowLogin(true);
+    setShowLanding(false);
+  };
+
+  // Show landing page
+  if (showLanding) {
+    return (
+      <>
+        <LandingPage 
+          onGetStarted={handleGetStartedWithLogin}
+          onLogin={handleShowLogin}
+        />
+        <Toaster 
+          position="bottom-right"
+          toastOptions={{
+            style: {
+              background: '#2a2a3e',
+              color: '#ffffff',
+              border: '1px solid #3a3a4e',
+            },
+          }}
+        />
+      </>
+    );
+  }
+
+  const handleNavigateToLanding = () => {
+    setIsAuthenticated(false);
+    setShowDashboard(false);
+    setShowLogin(false);
+    setShowLanding(true);
+  };
+
   // Show dashboard page
   if (showDashboard) {
     return (
       <>
-        <DashboardPage onNavigateToBuilder={handleNavigateToBuilder} />
+        <DashboardPage 
+          onNavigateToBuilder={handleNavigateToBuilder}
+          onNavigateToLanding={handleNavigateToLanding}
+        />
         <Toaster 
           position="bottom-right"
           toastOptions={{

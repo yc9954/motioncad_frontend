@@ -23,11 +23,15 @@ import {
   Settings,
   Folder,
   AlertCircle,
+  LogOut,
 } from "lucide-react"
 import { Card } from "@/app/components/ui/card"
 import { Badge } from "@/app/components/ui/badge"
 import { PromptingTab } from "@/app/components/prompting-tab"
 import { TravelCard } from "@/app/components/ui/travel-card"
+import { projectApi, ProjectResponse, authApi } from "@/lib/api"
+import { toast } from "sonner"
+import { Button } from "@/app/components/ui/button"
 
 // Menu items
 const menuItems = [
@@ -148,12 +152,32 @@ const mockIssues = [
 
 interface DashboardPageProps {
   onNavigateToBuilder?: () => void;
+  onNavigateToLanding?: () => void;
 }
 
 type TabId = "home" | "prompting" | "profile";
 
-export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
+export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: DashboardPageProps) {
   const [activeTab, setActiveTab] = useState<TabId>("home");
+  
+  // 초기 상태: mock 데이터로 시작
+  const initialMockProjects: ProjectResponse[] = mockProjects.map(p => ({
+    id: p.id,
+    title: p.title,
+    description: `A 3D model created ${p.createdAt}. This project has ${p.views} views and ${p.likes} likes.`,
+    nickname: p.author,
+    isPublic: true,
+    previewImageUrl: p.thumbnailUrl, // 하드코딩된 썸네일 URL
+    likesCount: p.likes,
+    viewsCount: p.views,
+    commentCount: 0,
+    components: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }));
+  
+  const [projects, setProjects] = useState<ProjectResponse[]>(initialMockProjects);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [projectThumbnails, setProjectThumbnails] = useState<Record<number, string>>(() => {
     // 초기 썸네일을 mockProjects의 thumbnailUrl로 설정
     const initialThumbnails: Record<number, string> = {};
@@ -165,6 +189,37 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
     return initialThumbnails;
   });
   const [selectedProject, setSelectedProject] = useState<{ glbUrl: string; name: string } | null>(null);
+
+  // 백엔드에서 프로젝트 목록 가져오기 (백그라운드에서 시도)
+  useEffect(() => {
+    const loadProjects = async () => {
+      if (activeTab !== 'home') return;
+      
+      setIsLoadingProjects(true);
+      try {
+        const fetchedProjects = await projectApi.getProjects({ sort: 'latest' });
+        if (fetchedProjects && fetchedProjects.length > 0) {
+          setProjects(fetchedProjects);
+          
+          // 썸네일 URL 설정
+          const thumbnails: Record<number, string> = {};
+          fetchedProjects.forEach(project => {
+            if (project.previewImageUrl) {
+              thumbnails[project.id] = project.previewImageUrl;
+            }
+          });
+          setProjectThumbnails(prev => ({ ...prev, ...thumbnails }));
+        }
+      } catch (error) {
+        console.error('프로젝트 목록 로드 실패 (mock 데이터 사용):', error);
+        // 실패해도 mock 데이터가 이미 표시되고 있으므로 에러만 로그
+      } finally {
+        setIsLoadingProjects(false);
+      }
+    };
+
+    loadProjects();
+  }, [activeTab]);
 
   // GLB 썸네일 생성 함수 (prompting-tab의 함수와 유사한 로직)
   const generateThumbnailFromGLB = async (file: File): Promise<string | null> => {
@@ -321,23 +376,18 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
     }
   };
 
-  // 프로젝트 썸네일 생성
+  // 프로젝트 썸네일 생성 (백엔드에서 가져온 프로젝트용)
   useEffect(() => {
-    if (activeTab !== "home") return;
+    if (activeTab !== "home" || projects.length === 0) return;
     
     const generateThumbnails = async () => {
       const thumbnails: Record<number, string> = {};
       
-      for (const project of mockProjects) {
-        if (project.glbUrl && !projectThumbnails[project.id]) {
-          try {
-            const thumbnail = await generateThumbnailFromGLBUrl(project.glbUrl);
-            if (thumbnail) {
-              thumbnails[project.id] = thumbnail;
-            }
-          } catch (error) {
-            console.error(`Error loading thumbnail for ${project.title}:`, error);
-          }
+      for (const project of projects) {
+        // previewImageUrl이 없고 썸네일도 없는 경우에만 생성
+        if (!project.previewImageUrl && !projectThumbnails[project.id]) {
+          // 컴포넌트에서 모델 URL을 가져와야 하지만, 여기서는 스킵
+          // 실제로는 partApi를 통해 모델 URL을 가져와야 함
         }
       }
       
@@ -347,7 +397,7 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
     };
 
     generateThumbnails();
-  }, [activeTab, projectThumbnails]);
+  }, [activeTab, projects, projectThumbnails]);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -363,9 +413,9 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {mockProjects.map((project) => {
-                  // 하드코딩된 썸네일 URL 우선 사용, 없으면 생성된 썸네일, 없으면 기본 이미지
-                  const thumbnailUrl = project.thumbnailUrl || projectThumbnails[project.id];
+                {projects.map((project) => {
+                  // 썸네일 URL: previewImageUrl 우선, 없으면 projectThumbnails, 없으면 기본 이미지
+                  const thumbnailUrl = project.previewImageUrl || projectThumbnails[project.id];
                   const imageUrl = thumbnailUrl 
                     ? thumbnailUrl 
                     : `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(project.title)}`;
@@ -376,14 +426,9 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
                       imageUrl={imageUrl}
                       imageAlt={project.title}
                       title={project.title}
-                      location={`by ${project.author}`}
-                      overview={`A 3D model created ${project.createdAt}. This project has ${project.views} views and ${project.likes} likes. Click to open and edit in the 3D editor.`}
-                      onBookNow={() => {
-                        if (project.glbUrl) {
-                          setSelectedProject({ glbUrl: project.glbUrl, name: project.title });
-                          setActiveTab("prompting");
-                        }
-                      }}
+                      location={`by ${project.nickname || 'Unknown'}`}
+                      overview={project.description || `This project has ${project.viewsCount} views and ${project.likesCount} likes. Click to open and edit in the 3D editor.`}
+                      onBookNow={() => onProjectClick(project)}
                       className="h-[350px]"
                     />
                   );
@@ -512,6 +557,20 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
               </div>
               <ChevronsUpDown className="h-5 w-5 rounded-md flex-shrink-0" />
             </SidebarMenuButton>
+            {onNavigateToLanding && (
+              <Button
+                variant="outline"
+                className="w-full mt-2"
+                onClick={() => {
+                  authApi.logout();
+                  onNavigateToLanding();
+                  toast.success("로그아웃되었습니다.");
+                }}
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                로그아웃
+              </Button>
+            )}
           </SidebarGroup>
         </SidebarFooter>
       </Sidebar>

@@ -16,6 +16,7 @@ import { generate3DModel, checkTaskStatus } from "@/lib/tripo-api";
 import { ModelViewer } from "@/app/components/model-viewer";
 import { Unified3DScene } from "@/app/components/unified-3d-scene";
 import { TravelCard } from "@/app/components/ui/travel-card";
+import { projectApi, assetApi, ComponentRequest, ProjectRequest } from "@/lib/api";
 
 // 씬 모델 타입 정의
 interface SceneModel {
@@ -518,7 +519,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     }
   };
 
-  const handleAddToScene = (model: { modelUrl?: string; prompt?: string; taskId?: string }) => {
+  const handleAddToScene = async (model: { modelUrl?: string; prompt?: string; taskId?: string }) => {
     if (model.modelUrl) {
       const newModel: SceneModel = {
         id: model.taskId || `model-${Date.now()}`,
@@ -532,6 +533,21 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       };
       setSceneModels((prev) => [...prev, newModel]);
       setSelectedModelIds([newModel.id]);
+      
+      // AI 생성 모델인 경우 백엔드에 등록
+      if (model.taskId && model.modelUrl) {
+        try {
+          const partId = await assetApi.confirmAiAsset(
+            model.prompt || "3D 모델",
+            model.modelUrl
+          );
+          console.log('AI 에셋이 백엔드에 등록되었습니다:', partId);
+        } catch (error) {
+          console.error('AI 에셋 등록 실패:', error);
+          // 에러가 발생해도 씬에는 추가됨
+        }
+      }
+      
       toast.success("씬에 추가되었습니다.");
     } else {
       toast.error("모델을 씬에 추가할 수 없습니다.");
@@ -644,24 +660,64 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     );
   }, []);
 
-  // 디오라마 저장
-  const handleSaveDiorama = useCallback(() => {
-    const diorama: Diorama = {
-      id: `diorama-${Date.now()}`,
-      name: dioramaName,
-      models: [...sceneModels],
-      groups: [...modelGroups],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+  // 디오라마 저장 (백엔드 API 연결)
+  const handleSaveDiorama = useCallback(async () => {
+    try {
+      // 사용자 ID 가져오기 (임시로 localStorage에서, 나중에 인증 시스템으로 교체)
+      const userId = parseInt(localStorage.getItem('userId') || '1', 10);
+      const currentProjectId = localStorage.getItem('currentProjectId') 
+        ? parseInt(localStorage.getItem('currentProjectId')!, 10) 
+        : undefined;
 
-    // 로컬 스토리지에 저장
-    const existingDioramas = JSON.parse(localStorage.getItem("dioramas") || "[]");
-    existingDioramas.push(diorama);
-    localStorage.setItem("dioramas", JSON.stringify(existingDioramas));
+      // 씬 모델을 컴포넌트 요청 형식으로 변환
+      const components: ComponentRequest[] = sceneModels
+        .filter(m => m.modelUrl && m.visible)
+        .map(m => ({
+          partId: parseInt(m.id.replace(/\D/g, '')) || 0, // 임시: partId는 실제 Part ID여야 함
+          posX: m.position.x,
+          posY: m.position.y,
+          posZ: m.position.z,
+          rotX: m.rotation.x,
+          rotY: m.rotation.y,
+          rotZ: m.rotation.z,
+          scaleX: m.scale,
+          scaleY: m.scale,
+          scaleZ: m.scale,
+        }));
 
-    setSavedDioramas((prev) => [...prev, diorama]);
-    toast.success(`"${dioramaName}" 디오라마가 저장되었습니다.`);
+      // 프로젝트 요청 생성
+      const projectRequest: ProjectRequest = {
+        title: dioramaName,
+        description: `Created with ${sceneModels.length} models`,
+        isPublic: false,
+        components: components,
+      };
+
+      // 백엔드에 저장
+      const projectId = await projectApi.saveProject(userId, projectRequest, currentProjectId);
+      
+      // 프로젝트 ID 저장
+      localStorage.setItem('currentProjectId', projectId.toString());
+
+      toast.success(`"${dioramaName}" 프로젝트가 저장되었습니다.`);
+    } catch (error) {
+      console.error('프로젝트 저장 실패:', error);
+      toast.error(error instanceof Error ? error.message : '프로젝트 저장에 실패했습니다.');
+      
+      // 실패 시 로컬 스토리지에 백업 저장
+      const diorama: Diorama = {
+        id: `diorama-${Date.now()}`,
+        name: dioramaName,
+        models: [...sceneModels],
+        groups: [...modelGroups],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const existingDioramas = JSON.parse(localStorage.getItem("dioramas") || "[]");
+      existingDioramas.push(diorama);
+      localStorage.setItem("dioramas", JSON.stringify(existingDioramas));
+      setSavedDioramas((prev) => [...prev, diorama]);
+    }
   }, [dioramaName, sceneModels, modelGroups]);
 
   // 디오라마 내보내기 (JSON)
