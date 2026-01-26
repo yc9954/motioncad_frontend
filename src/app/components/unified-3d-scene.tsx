@@ -152,6 +152,10 @@ export function Unified3DScene({
     transformControls.setMode('translate');
     transformControls.setSize(1.2);
     transformControls.setSpace('world'); // 월드 좌표계 사용
+    // Scale 모드에서 uniform 스케일 강제
+    transformControls.showX = true;
+    transformControls.showY = true;
+    transformControls.showZ = true;
     scene.add(transformControls);
     transformControlsRef.current = transformControls;
 
@@ -182,7 +186,10 @@ export function Unified3DScene({
           z: object.rotation.z,
         });
       } else if (mode === 'scale' && callbacksRef.current.onModelScale) {
-        callbacksRef.current.onModelScale(modelId, object.scale.x);
+        // Uniform scale: x, y, z 중 평균값 사용하여 모든 축을 동일하게 유지
+        const avgScale = (object.scale.x + object.scale.y + object.scale.z) / 3;
+        object.scale.set(avgScale, avgScale, avgScale);
+        callbacksRef.current.onModelScale(modelId, avgScale);
       }
     });
 

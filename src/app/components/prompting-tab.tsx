@@ -646,26 +646,188 @@ export function PromptingTab() {
   };
 
   // 파일 업로드 핸들러
-  const handleFileUpload = (files: FileList | null) => {
+  // GLB 파일에서 썸네일 생성 함수
+  const generateThumbnailFromGLB = async (file: File): Promise<string | null> => {
+    try {
+      // Three.js와 GLTFLoader 로드
+      if (!(window as any).THREE) {
+        const threeScript = document.createElement('script');
+        threeScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+        await new Promise((resolve, reject) => {
+          threeScript.onload = () => resolve(undefined);
+          threeScript.onerror = () => reject(new Error('Three.js 로드 실패'));
+          document.head.appendChild(threeScript);
+        });
+      }
+
+      const THREE = (window as any).THREE;
+      if (!THREE) {
+        console.error('Three.js가 로드되지 않았습니다.');
+        return null;
+      }
+
+      // GLTFLoader 확인
+      let GLTFLoader = THREE.GLTFLoader;
+      if (!GLTFLoader) {
+        const gltfLoaderScript = document.createElement('script');
+        gltfLoaderScript.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js';
+        await new Promise((resolve, reject) => {
+          gltfLoaderScript.onload = () => resolve(undefined);
+          gltfLoaderScript.onerror = () => reject(new Error('GLTFLoader 로드 실패'));
+          document.head.appendChild(gltfLoaderScript);
+        });
+        GLTFLoader = THREE.GLTFLoader;
+      }
+
+      // 오프스크린 렌더러 생성
+      const width = 512;
+      const height = 512;
+      const pixelRatio = Math.min(window.devicePixelRatio, 2);
+      const renderer = new THREE.WebGLRenderer({ 
+        antialias: true, 
+        alpha: true,
+        preserveDrawingBuffer: true,
+        powerPreference: "high-performance",
+      });
+      renderer.setSize(width * pixelRatio, height * pixelRatio, false);
+      renderer.setPixelRatio(pixelRatio);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.outputEncoding = THREE.sRGBEncoding;
+
+      // 씬 생성
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xfafafa);
+
+      // 카메라 설정
+      const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
+      camera.position.set(3, 3, 3);
+      camera.lookAt(0, 0, 0);
+
+      // 조명 설정
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+      scene.add(ambientLight);
+      
+      const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1);
+      directionalLight1.position.set(5, 10, 5);
+      directionalLight1.castShadow = true;
+      scene.add(directionalLight1);
+      
+      const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+      directionalLight2.position.set(-5, 5, -5);
+      scene.add(directionalLight2);
+
+      // 파일 URL 생성
+      const fileUrl = URL.createObjectURL(file);
+
+      // 모델 로드
+      const loader = new GLTFLoader();
+      
+      return new Promise((resolve) => {
+        loader.load(
+          fileUrl,
+          (gltf: any) => {
+            try {
+              const model = gltf.scene.clone();
+
+              // 모델 바운딩 박스 계산
+              const box = new THREE.Box3().setFromObject(model);
+              
+              if (box.isEmpty()) {
+                throw new Error('모델이 비어있습니다.');
+              }
+
+              const center = box.getCenter(new THREE.Vector3());
+              const size = box.getSize(new THREE.Vector3());
+              const maxDim = Math.max(size.x, size.y, size.z);
+              
+              if (maxDim === 0) {
+                throw new Error('모델 크기가 0입니다.');
+              }
+
+              const scale = 1.5 / maxDim;
+
+              // 모델 중앙 정렬 및 스케일 조정
+              model.position.sub(center);
+              model.scale.multiplyScalar(scale);
+
+              // 모델에 그림자 적용
+              model.traverse((child: any) => {
+                if (child.isMesh) {
+                  child.castShadow = true;
+                  child.receiveShadow = true;
+                }
+              });
+
+              scene.add(model);
+
+              // 렌더링
+              renderer.render(scene, camera);
+
+              // 이미지로 변환
+              const dataURL = renderer.domElement.toDataURL('image/png', 1.0);
+              
+              // 정리
+              URL.revokeObjectURL(fileUrl);
+              renderer.dispose();
+              scene.traverse((object: any) => {
+                if (object.geometry) object.geometry.dispose();
+                if (object.material) {
+                  if (Array.isArray(object.material)) {
+                    object.material.forEach((mat: any) => {
+                      if (mat.map) mat.map.dispose();
+                      mat.dispose();
+                    });
+                  } else {
+                    if (object.material.map) object.material.map.dispose();
+                    object.material.dispose();
+                  }
+                }
+              });
+
+              resolve(dataURL);
+            } catch (error) {
+              console.error('Thumbnail generation error:', error);
+              URL.revokeObjectURL(fileUrl);
+              renderer.dispose();
+              resolve(null);
+            }
+          },
+          undefined,
+          (error: Error) => {
+            console.error('GLB load error:', error);
+            URL.revokeObjectURL(fileUrl);
+            renderer.dispose();
+            resolve(null);
+          }
+        );
+      });
+    } catch (error) {
+      console.error('Thumbnail generation setup error:', error);
+      return null;
+    }
+  };
+
+  const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
     const imageTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
     const modelTypes = ["model/gltf-binary", "model/gltf+json", "application/octet-stream"];
     const allowedExtensions = [".glb", ".obj", ".fbx", ".stl"];
 
-    Array.from(files).forEach((file) => {
+    for (const file of Array.from(files)) {
       const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf("."));
       const isImage = imageTypes.includes(file.type) || [".jpg", ".jpeg", ".png", ".webp"].includes(fileExtension);
       const isModel = modelTypes.includes(file.type) || allowedExtensions.includes(fileExtension);
 
       if (!isImage && !isModel) {
         toast.error(`${file.name}: 지원하지 않는 파일 형식입니다.`);
-        return;
+        continue;
       }
 
       if (file.size > 100 * 1024 * 1024) {
         toast.error(`${file.name}: 파일 크기가 100MB를 초과합니다.`);
-        return;
+        continue;
       }
 
       const fileId = `file-${Date.now()}-${Math.random()}`;
@@ -673,6 +835,14 @@ export function PromptingTab() {
 
       if (isImage) {
         previewUrl = URL.createObjectURL(file);
+      } else if (isModel && fileExtension === ".glb") {
+        // GLB 파일인 경우 썸네일 생성
+        toast.info(`${file.name} 썸네일 생성 중...`);
+        const thumbnail = await generateThumbnailFromGLB(file);
+        previewUrl = thumbnail || undefined;
+        if (!previewUrl) {
+          toast.warning(`${file.name} 썸네일 생성에 실패했습니다.`);
+        }
       }
 
       setUploadedFiles((prev) => [
@@ -686,7 +856,7 @@ export function PromptingTab() {
       ]);
 
       toast.success(`${file.name}이(가) 업로드되었습니다.`);
-    });
+    }
   };
 
   // 파일 삭제 핸들러
@@ -752,10 +922,26 @@ export function PromptingTab() {
   // 드롭 핸들러
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDraggingOver(false);
 
     try {
-      const dragData = JSON.parse(e.dataTransfer.getData("application/json"));
+      // 드래그 데이터 가져오기
+      let dragDataStr = e.dataTransfer.getData("application/json");
+      
+      // 데이터가 없으면 다른 형식으로 시도
+      if (!dragDataStr) {
+        // 파일이 직접 드롭된 경우
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+          handleFileUpload(files);
+          return;
+        }
+        console.error("드래그 데이터를 찾을 수 없습니다.");
+        return;
+      }
+
+      const dragData = JSON.parse(dragDataStr);
 
       // 씬에 이미 있는 모델 수에 따라 오프셋 적용
       const offset = sceneModels.length * 0.5;
@@ -814,14 +1000,21 @@ export function PromptingTab() {
   // 드래그 오버 핸들러
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
     setIsDraggingOver(true);
   };
 
-  // 드래그 리브 핸들러
+  // 드래그 리브 핸들러 - 실제로 뷰포트를 벗어날 때만 false로 설정
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDraggingOver(false);
+    e.stopPropagation();
+    // relatedTarget이 뷰포트 외부이거나 null인 경우에만 false로 설정
+    const target = e.currentTarget as HTMLElement;
+    const relatedTarget = e.relatedTarget as HTMLElement | null;
+    if (!relatedTarget || !target.contains(relatedTarget)) {
+      setIsDraggingOver(false);
+    }
   };
 
   // 모델 삭제 핸들러
@@ -1059,7 +1252,7 @@ export function PromptingTab() {
                 {uploadedFiles.map((uploadedFile) => (
                   <Card 
                     key={uploadedFile.id} 
-                    className={`p-2 flex items-center gap-2 ${
+                    className={`relative overflow-hidden ${
                       uploadedFile.type === "model" ? "cursor-grab active:cursor-grabbing" : ""
                     }`}
                     draggable={uploadedFile.type === "model"}
@@ -1069,37 +1262,47 @@ export function PromptingTab() {
                       name: uploadedFile.file.name,
                     })}
                   >
-                    <div className="w-16 h-16 bg-muted rounded flex-shrink-0 overflow-hidden">
+                    {/* 썸네일 영역 - 전체 너비 */}
+                    <div className="w-full aspect-square bg-muted overflow-hidden relative">
                       {uploadedFile.previewUrl ? (
                         <img
                           src={uploadedFile.previewUrl}
                           alt={uploadedFile.file.name}
                           className="w-full h-full object-cover"
+                          style={{ imageRendering: 'auto' }}
+                          loading="lazy"
                         />
                       ) : uploadedFile.type === "model" ? (
                         <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
                           <div className="text-center">
-                            <div className="text-2xl mb-1">📦</div>
-                            <p className="text-[8px] text-muted-foreground font-medium">3D</p>
+                            <div className="text-3xl mb-1">📦</div>
+                            <p className="text-[10px] text-muted-foreground font-medium">3D</p>
                           </div>
                         </div>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
-                          <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                          <ImageIcon className="h-8 w-8 text-muted-foreground" />
                         </div>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{uploadedFile.file.name}</p>
-                      <p className="text-xs text-muted-foreground">
+                    
+                    {/* 파일 정보 영역 */}
+                    <div className="p-3 space-y-1">
+                      <p className="text-xs font-medium truncate leading-tight">{uploadedFile.file.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
                         {(uploadedFile.file.size / 1024 / 1024).toFixed(2)} MB
                       </p>
                     </div>
+                    
+                    {/* 삭제 버튼 - 우상단 */}
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 w-6 p-0 flex-shrink-0"
-                      onClick={() => handleFileRemove(uploadedFile.id, uploadedFile.previewUrl)}
+                      className="absolute top-2 right-2 h-7 w-7 p-0 bg-background/80 hover:bg-background backdrop-blur-sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleFileRemove(uploadedFile.id, uploadedFile.previewUrl);
+                      }}
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -1203,10 +1406,15 @@ export function PromptingTab() {
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingOver(true);
+        }}
       >
         {/* 드래그 오버 시 시각적 피드백 */}
         {isDraggingOver && (
-          <div className="absolute inset-0 bg-primary/10 border-2 border-dashed border-primary flex items-center justify-center z-10">
+          <div className="absolute inset-0 bg-primary/10 border-2 border-dashed border-primary flex items-center justify-center z-50 pointer-events-none">
             <div className="text-center">
               <div className="text-4xl mb-2">📦</div>
               <p className="text-primary font-semibold">여기에 드롭하세요</p>
@@ -1216,7 +1424,7 @@ export function PromptingTab() {
 
         {/* 3D 뷰포트 컨텐츠 */}
         {sceneModels.length === 0 ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-white">
+          <div className="absolute inset-0 flex items-center justify-center bg-white pointer-events-none">
             <div className="text-center">
               <div className="w-32 h-32 mx-auto mb-4 relative">
                 <svg viewBox="0 0 100 100" className="w-full h-full opacity-40">
@@ -1238,7 +1446,7 @@ export function PromptingTab() {
             </div>
           </div>
         ) : (
-          <div className="absolute inset-0">
+          <div className="absolute inset-0" style={{ pointerEvents: isDraggingOver ? 'none' : 'auto' }}>
             <Unified3DScene
               models={sceneModels
                 .filter(m => m.modelUrl && m.visible)
