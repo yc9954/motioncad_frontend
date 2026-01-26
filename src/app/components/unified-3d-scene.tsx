@@ -11,55 +11,76 @@ interface Unified3DSceneProps {
     locked?: boolean;
   }>;
   selectedModelId?: string | null;
+  transformMode?: 'translate' | 'rotate' | 'scale';
   onModelClick?: (modelId: string) => void;
   onModelDrag?: (modelId: string, position: { x: number; y: number; z: number }) => void;
+  onModelRotate?: (modelId: string, rotation: { x: number; y: number; z: number }) => void;
+  onModelScale?: (modelId: string, scale: number) => void;
 }
 
 export function Unified3DScene({
   models,
   selectedModelId,
+  transformMode = 'translate',
   onModelClick,
   onModelDrag,
+  onModelRotate,
+  onModelScale,
 }: Unified3DSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<any>(null);
   const rendererRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
   const controlsRef = useRef<any>(null);
+  const transformControlsRef = useRef<any>(null);
   const modelsRef = useRef<Map<string, any>>(new Map());
   const loaderRef = useRef<any>(null);
   const raycasterRef = useRef<any>(null);
   const mouseRef = useRef<any>(null);
-  const isDraggingRef = useRef(false);
-  const dragModelIdRef = useRef<string | null>(null);
-  const dragPlaneRef = useRef<any>(null);
   const [threeLoaded, setThreeLoaded] = useState(false);
 
-  // Load Three.js and OrbitControls from CDN
+  // Load Three.js and all required controls from CDN
   useEffect(() => {
-    if ((window as any).THREE) {
+    if ((window as any).THREE && (window as any).THREE.TransformControls) {
       setThreeLoaded(true);
       return;
     }
 
-    const threeScript = document.createElement('script');
-    threeScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-    threeScript.onload = () => {
-      // Load OrbitControls
-      const orbitControlsScript = document.createElement('script');
-      orbitControlsScript.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js';
-      orbitControlsScript.onload = () => {
-        // Load GLTFLoader
-        const gltfLoaderScript = document.createElement('script');
-        gltfLoaderScript.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js';
-        gltfLoaderScript.onload = () => {
-          setThreeLoaded(true);
-        };
-        document.head.appendChild(gltfLoaderScript);
-      };
-      document.head.appendChild(orbitControlsScript);
+    const loadScript = (src: string): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => resolve();
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
     };
-    document.head.appendChild(threeScript);
+
+    const loadAllScripts = async () => {
+      try {
+        // Load Three.js core
+        if (!(window as any).THREE) {
+          await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+        }
+        // Load OrbitControls
+        if (!(window as any).THREE.OrbitControls) {
+          await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js');
+        }
+        // Load TransformControls
+        if (!(window as any).THREE.TransformControls) {
+          await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js');
+        }
+        // Load GLTFLoader
+        if (!(window as any).THREE.GLTFLoader) {
+          await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js');
+        }
+        setThreeLoaded(true);
+      } catch (error) {
+        console.error('Failed to load Three.js scripts:', error);
+      }
+    };
+
+    loadAllScripts();
   }, []);
 
   useEffect(() => {
@@ -69,27 +90,27 @@ export function Unified3DScene({
 
     // Scene setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x16171f);
+    scene.background = new THREE.Color(0x1a1a2e);
     sceneRef.current = scene;
 
-    // Camera setup with better FOV
+    // Camera setup
     const camera = new THREE.PerspectiveCamera(
-      50, // Better FOV for viewing
+      50,
       containerRef.current.clientWidth / containerRef.current.clientHeight,
       0.1,
       1000
     );
-    camera.position.set(0, 3, 8);
+    camera.position.set(5, 5, 10);
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
-    // Renderer setup with better quality
-    const renderer = new THREE.WebGLRenderer({ 
+    // Renderer setup
+    const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: false,
       powerPreference: "high-performance"
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Better quality
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -99,20 +120,55 @@ export function Unified3DScene({
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // OrbitControls for camera
-    if (THREE.OrbitControls) {
-      const controls = new THREE.OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.05;
-      controls.enableZoom = true;
-      controls.enablePan = true;
-      controls.minDistance = 2;
-      controls.maxDistance = 50;
-      controlsRef.current = controls;
-    }
+    // OrbitControls
+    const orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
+    orbitControls.enableDamping = true;
+    orbitControls.dampingFactor = 0.05;
+    orbitControls.enableZoom = true;
+    orbitControls.enablePan = true;
+    orbitControls.minDistance = 2;
+    orbitControls.maxDistance = 50;
+    orbitControls.target.set(0, 0, 0);
+    controlsRef.current = orbitControls;
 
-    // Lighting - improved
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    // TransformControls (기즈모)
+    const transformControls = new THREE.TransformControls(camera, renderer.domElement);
+    transformControls.setMode('translate');
+    transformControls.setSize(1);
+    scene.add(transformControls);
+    transformControlsRef.current = transformControls;
+
+    // TransformControls 이벤트
+    transformControls.addEventListener('dragging-changed', (event: any) => {
+      orbitControls.enabled = !event.value;
+    });
+
+    transformControls.addEventListener('objectChange', () => {
+      const object = transformControls.object;
+      if (!object || !object.userData.modelId) return;
+
+      const modelId = object.userData.modelId;
+      const mode = transformControls.getMode();
+
+      if (mode === 'translate' && onModelDrag) {
+        onModelDrag(modelId, {
+          x: object.position.x,
+          y: object.position.y,
+          z: object.position.z,
+        });
+      } else if (mode === 'rotate' && onModelRotate) {
+        onModelRotate(modelId, {
+          x: object.rotation.x,
+          y: object.rotation.y,
+          z: object.rotation.z,
+        });
+      } else if (mode === 'scale' && onModelScale) {
+        onModelScale(modelId, object.scale.x);
+      }
+    });
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
 
     const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1);
@@ -122,31 +178,47 @@ export function Unified3DScene({
     directionalLight1.shadow.mapSize.height = 2048;
     directionalLight1.shadow.camera.near = 0.5;
     directionalLight1.shadow.camera.far = 50;
+    directionalLight1.shadow.camera.left = -20;
+    directionalLight1.shadow.camera.right = 20;
+    directionalLight1.shadow.camera.top = 20;
+    directionalLight1.shadow.camera.bottom = -20;
     scene.add(directionalLight1);
 
-    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
     directionalLight2.position.set(-5, 5, -5);
     scene.add(directionalLight2);
 
-    // Ground plane for shadows
-    const planeGeometry = new THREE.PlaneGeometry(50, 50);
-    const planeMaterial = new THREE.ShadowMaterial({ opacity: 0.2 });
-    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-    plane.rotation.x = -Math.PI / 2;
-    plane.position.y = -0.5;
-    plane.receiveShadow = true;
-    scene.add(plane);
+    // === 작업대 (Workbench/Ground Plane) ===
+    // 그리드 헬퍼
+    const gridHelper = new THREE.GridHelper(20, 20, 0x444466, 0x333355);
+    gridHelper.position.y = 0;
+    scene.add(gridHelper);
 
-    // Drag plane (invisible plane for dragging)
-    const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    dragPlaneRef.current = dragPlane;
+    // 작업대 평면 (그림자 받는 용도)
+    const groundGeometry = new THREE.PlaneGeometry(20, 20);
+    const groundMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2a2a3e,
+      roughness: 0.8,
+      metalness: 0.2,
+    });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.01;
+    ground.receiveShadow = true;
+    ground.name = 'ground';
+    scene.add(ground);
+
+    // 축 표시 (원점에 작은 축 헬퍼)
+    const axesHelper = new THREE.AxesHelper(2);
+    axesHelper.position.set(-9, 0.01, -9);
+    scene.add(axesHelper);
 
     // GLTF Loader
     const GLTFLoader = THREE.GLTFLoader || (window as any).THREE.GLTFLoader;
     const loader = new GLTFLoader();
     loaderRef.current = loader;
 
-    // Raycaster for mouse interaction
+    // Raycaster
     const raycaster = new THREE.Raycaster();
     raycasterRef.current = raycaster;
     mouseRef.current = new THREE.Vector2();
@@ -154,9 +226,7 @@ export function Unified3DScene({
     // Animation loop
     const animate = () => {
       requestAnimationFrame(animate);
-      if (controlsRef.current) {
-        controlsRef.current.update();
-      }
+      orbitControls.update();
       renderer.render(scene, camera);
     };
     animate();
@@ -170,58 +240,30 @@ export function Unified3DScene({
     };
     window.addEventListener('resize', handleResize);
 
-    // Mouse events for dragging
-    const handleMouseMove = (event: MouseEvent) => {
-      if (!containerRef.current || !raycaster || !camera || !scene) return;
+    // Mouse click handler for model selection
+    const handleClick = (event: MouseEvent) => {
+      if (!containerRef.current || !raycasterRef.current || !cameraRef.current) return;
 
       const rect = containerRef.current.getBoundingClientRect();
       mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-      if (isDraggingRef.current && dragModelIdRef.current && dragPlaneRef.current) {
-        raycaster.setFromCamera(mouseRef.current, camera);
-        const intersectPoint = new THREE.Vector3();
-        raycaster.ray.intersectPlane(dragPlaneRef.current, intersectPoint);
-        
-        const modelGroup = modelsRef.current.get(dragModelIdRef.current);
-        if (modelGroup) {
-          modelGroup.position.copy(intersectPoint);
-          
-          if (onModelDrag) {
-            onModelDrag(dragModelIdRef.current, {
-              x: intersectPoint.x,
-              y: intersectPoint.y,
-              z: intersectPoint.z,
-            });
-          }
-        }
-      }
-    };
+      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
 
-    const handleMouseDown = (event: MouseEvent) => {
-      if (!containerRef.current || !raycaster || !camera || !scene) return;
-
-      const rect = containerRef.current.getBoundingClientRect();
-      mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouseRef.current, camera);
-
-      // Get all meshes from models
+      // Get all model meshes
       const meshes: any[] = [];
       modelsRef.current.forEach((group) => {
         group.traverse((child: any) => {
-          if (child.isMesh) {
+          if (child.isMesh && child.name !== 'ground') {
             meshes.push(child);
           }
         });
       });
 
-      const intersects = raycaster.intersectObjects(meshes, true);
+      const intersects = raycasterRef.current.intersectObjects(meshes, true);
 
-      if (intersects.length > 0 && !isDraggingRef.current) {
-        const intersect = intersects[0];
-        const clickedMesh = intersect.object;
+      if (intersects.length > 0) {
+        const clickedMesh = intersects[0].object;
 
         // Find which model was clicked
         for (const [modelId, group] of modelsRef.current.entries()) {
@@ -233,23 +275,8 @@ export function Unified3DScene({
           });
 
           if (found) {
-            // Check if the model is locked
-            const modelData = models.find(m => m.id === modelId);
-            const isLocked = modelData?.locked ?? false;
-
-            // Always trigger click for selection
             if (onModelClick) {
               onModelClick(modelId);
-            }
-
-            // Only allow dragging if not locked
-            if (!isLocked) {
-              isDraggingRef.current = true;
-              dragModelIdRef.current = modelId;
-
-              // Set drag plane at model's Y position
-              const modelY = group.position.y;
-              dragPlaneRef.current.constant = modelY;
             }
             break;
           }
@@ -257,23 +284,20 @@ export function Unified3DScene({
       }
     };
 
-    const handleMouseUp = () => {
-      isDraggingRef.current = false;
-      dragModelIdRef.current = null;
-    };
-
-    containerRef.current.addEventListener('mousemove', handleMouseMove);
-    containerRef.current.addEventListener('mousedown', handleMouseDown);
-    containerRef.current.addEventListener('mouseup', handleMouseUp);
+    containerRef.current.addEventListener('click', handleClick);
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      if (containerRef.current && renderer.domElement) {
-        containerRef.current.removeChild(renderer.domElement);
+      if (containerRef.current) {
+        containerRef.current.removeEventListener('click', handleClick);
+        if (renderer.domElement && containerRef.current.contains(renderer.domElement)) {
+          containerRef.current.removeChild(renderer.domElement);
+        }
       }
+      transformControls.dispose();
       renderer.dispose();
     };
-  }, [threeLoaded, onModelClick, onModelDrag]);
+  }, [threeLoaded, onModelClick, onModelDrag, onModelRotate, onModelScale]);
 
   // Load models
   useEffect(() => {
@@ -282,7 +306,7 @@ export function Unified3DScene({
     const THREE = (window as any).THREE;
 
     models.forEach((model) => {
-      if (modelsRef.current.has(model.id)) return; // Already loaded
+      if (modelsRef.current.has(model.id)) return;
 
       loaderRef.current.load(
         model.modelUrl,
@@ -291,30 +315,29 @@ export function Unified3DScene({
 
           const modelGroup = new THREE.Group();
           modelGroup.add(gltf.scene.clone());
+          modelGroup.userData.modelId = model.id;
+
+          // 작업대 위에 배치 (Y = 0)
           modelGroup.position.set(
             model.position.x,
-            model.position.y,
-            model.position.z || 0
+            Math.max(model.position.y, 0),
+            model.position.z
           );
-          
-          if (model.rotation) {
-            modelGroup.rotation.set(
-              model.rotation.x,
-              model.rotation.y,
-              model.rotation.z
-            );
-          }
+
+          modelGroup.rotation.set(
+            model.rotation.x,
+            model.rotation.y,
+            model.rotation.z
+          );
 
           const scale = model.scale || 1;
           modelGroup.scale.set(scale, scale, scale);
 
-          // Enable shadows and improve quality
-          gltf.scene.traverse((child: any) => {
+          // Enable shadows
+          modelGroup.traverse((child: any) => {
             if (child.isMesh) {
               child.castShadow = true;
               child.receiveShadow = true;
-              
-              // Improve material quality
               if (child.material) {
                 if (Array.isArray(child.material)) {
                   child.material.forEach((mat: any) => {
@@ -331,10 +354,13 @@ export function Unified3DScene({
 
           sceneRef.current.add(modelGroup);
           modelsRef.current.set(model.id, modelGroup);
+
+          // 방금 추가된 모델이 선택된 모델이면 TransformControls 연결
+          if (model.id === selectedModelId && transformControlsRef.current) {
+            transformControlsRef.current.attach(modelGroup);
+          }
         },
-        (progress: any) => {
-          // Loading progress
-        },
+        undefined,
         (error: Error) => {
           console.error('Error loading model:', error);
         }
@@ -347,6 +373,9 @@ export function Unified3DScene({
         if (sceneRef.current) {
           sceneRef.current.remove(group);
         }
+        if (transformControlsRef.current && transformControlsRef.current.object === group) {
+          transformControlsRef.current.detach();
+        }
         group.traverse((child: any) => {
           if (child.isMesh) {
             if (child.geometry) child.geometry.dispose();
@@ -357,79 +386,85 @@ export function Unified3DScene({
                 child.material.dispose();
               }
             }
-            if (child.material?.map) child.material.map.dispose();
           }
         });
         modelsRef.current.delete(modelId);
       }
     });
-  }, [models, threeLoaded]);
+  }, [models, threeLoaded, selectedModelId]);
 
-  // Update model positions, rotations, and scales
+  // Update model transforms from props
   useEffect(() => {
     if (!threeLoaded) return;
 
     models.forEach((model) => {
       const modelGroup = modelsRef.current.get(model.id);
       if (modelGroup) {
-        // Update position
-        modelGroup.position.set(
-          model.position.x,
-          model.position.y,
-          model.position.z
-        );
-
-        // Update rotation
-        modelGroup.rotation.set(
-          model.rotation.x,
-          model.rotation.y,
-          model.rotation.z
-        );
-
-        // Update scale
-        modelGroup.scale.set(model.scale, model.scale, model.scale);
+        // TransformControls가 드래그 중이 아닐 때만 업데이트
+        if (!transformControlsRef.current?.dragging) {
+          modelGroup.position.set(
+            model.position.x,
+            model.position.y,
+            model.position.z
+          );
+          modelGroup.rotation.set(
+            model.rotation.x,
+            model.rotation.y,
+            model.rotation.z
+          );
+          modelGroup.scale.set(model.scale, model.scale, model.scale);
+        }
       }
     });
   }, [models, threeLoaded]);
 
+  // Handle selected model change - attach TransformControls
+  useEffect(() => {
+    if (!threeLoaded || !transformControlsRef.current) return;
+
+    if (selectedModelId) {
+      const modelGroup = modelsRef.current.get(selectedModelId);
+      if (modelGroup) {
+        // Check if model is locked
+        const modelData = models.find(m => m.id === selectedModelId);
+        if (modelData?.locked) {
+          transformControlsRef.current.detach();
+        } else {
+          transformControlsRef.current.attach(modelGroup);
+        }
+      }
+    } else {
+      transformControlsRef.current.detach();
+    }
+  }, [selectedModelId, threeLoaded, models]);
+
+  // Handle transform mode change
+  useEffect(() => {
+    if (!threeLoaded || !transformControlsRef.current) return;
+    transformControlsRef.current.setMode(transformMode);
+  }, [transformMode, threeLoaded]);
+
   // Highlight selected model
   useEffect(() => {
     if (!threeLoaded || !(window as any).THREE) return;
-    
+
     const THREE = (window as any).THREE;
-    
+
     modelsRef.current.forEach((group, modelId) => {
       group.traverse((child: any) => {
         if (child.isMesh && child.material) {
-          if (modelId === selectedModelId) {
-            // Highlight selected
-            if (Array.isArray(child.material)) {
-              child.material.forEach((mat: any) => {
-                if (mat.emissive !== undefined) {
-                  mat.emissive = new THREE.Color(0x00d4ff);
-                  mat.emissiveIntensity = 0.5;
-                }
-              });
-            } else {
-              if (child.material.emissive !== undefined) {
-                child.material.emissive = new THREE.Color(0x00d4ff);
-                child.material.emissiveIntensity = 0.5;
+          const isSelected = modelId === selectedModelId;
+          if (Array.isArray(child.material)) {
+            child.material.forEach((mat: any) => {
+              if (mat.emissive !== undefined) {
+                mat.emissive = new THREE.Color(isSelected ? 0x00d4ff : 0x000000);
+                mat.emissiveIntensity = isSelected ? 0.3 : 0;
               }
-            }
+            });
           } else {
-            // Remove highlight
-            if (Array.isArray(child.material)) {
-              child.material.forEach((mat: any) => {
-                if (mat.emissive !== undefined) {
-                  mat.emissive = new THREE.Color(0x000000);
-                  mat.emissiveIntensity = 0;
-                }
-              });
-            } else {
-              if (child.material.emissive !== undefined) {
-                child.material.emissive = new THREE.Color(0x000000);
-                child.material.emissiveIntensity = 0;
-              }
+            if (child.material.emissive !== undefined) {
+              child.material.emissive = new THREE.Color(isSelected ? 0x00d4ff : 0x000000);
+              child.material.emissiveIntensity = isSelected ? 0.3 : 0;
             }
           }
         }
@@ -439,8 +474,9 @@ export function Unified3DScene({
 
   if (!threeLoaded) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#16171f]">
+      <div className="w-full h-full flex items-center justify-center bg-[#1a1a2e]">
         <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
           <div className="text-gray-500 text-sm">3D 씬 로딩 중...</div>
         </div>
       </div>

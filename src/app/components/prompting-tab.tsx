@@ -612,6 +612,38 @@ export function PromptingTab() {
     );
   };
 
+  // 3D 씬에서 모델 회전 업데이트
+  const handleModelRotationUpdate = (modelId: string, rotation: { x: number; y: number; z: number }) => {
+    setSceneModels((prev) =>
+      prev.map((model) =>
+        model.id === modelId
+          ? { ...model, rotation: { ...model.rotation, ...rotation } }
+          : model
+      )
+    );
+  };
+
+  // 3D 씬에서 모델 크기 업데이트
+  const handleModelScaleUpdate = (modelId: string, scale: number) => {
+    setSceneModels((prev) =>
+      prev.map((model) =>
+        model.id === modelId
+          ? { ...model, scale }
+          : model
+      )
+    );
+  };
+
+  // transformMode를 3D 씬용 모드로 변환
+  const getSceneTransformMode = (): 'translate' | 'rotate' | 'scale' => {
+    switch (transformMode) {
+      case 'position': return 'translate';
+      case 'rotation': return 'rotate';
+      case 'scale': return 'scale';
+      default: return 'translate';
+    }
+  };
+
   // 파일 업로드 핸들러
   const handleFileUpload = (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -1223,8 +1255,11 @@ export function PromptingTab() {
                   locked: m.locked,
                 }))}
               selectedModelId={selectedModelId}
+              transformMode={getSceneTransformMode()}
               onModelClick={handleModelClick}
               onModelDrag={handleModelPositionUpdate}
+              onModelRotate={handleModelRotationUpdate}
+              onModelScale={handleModelScaleUpdate}
             />
             {/* 선택된 모델 삭제 버튼 */}
             {selectedModelId && (
