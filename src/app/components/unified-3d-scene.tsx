@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 
 interface Unified3DSceneProps {
   models: Array<{
@@ -37,7 +37,26 @@ export function Unified3DScene({
   const loaderRef = useRef<any>(null);
   const raycasterRef = useRef<any>(null);
   const mouseRef = useRef<any>(null);
+  const isDraggingGizmoRef = useRef(false);
   const [threeLoaded, setThreeLoaded] = useState(false);
+
+  // 콜백을 ref에 저장하여 항상 최신 값 참조
+  const callbacksRef = useRef({
+    onModelClick,
+    onModelDrag,
+    onModelRotate,
+    onModelScale,
+  });
+
+  // 콜백 업데이트
+  useEffect(() => {
+    callbacksRef.current = {
+      onModelClick,
+      onModelDrag,
+      onModelRotate,
+      onModelScale,
+    };
+  }, [onModelClick, onModelDrag, onModelRotate, onModelScale]);
 
   // Load Three.js and all required controls from CDN
   useEffect(() => {
@@ -58,19 +77,15 @@ export function Unified3DScene({
 
     const loadAllScripts = async () => {
       try {
-        // Load Three.js core
         if (!(window as any).THREE) {
           await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
         }
-        // Load OrbitControls
         if (!(window as any).THREE.OrbitControls) {
           await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js');
         }
-        // Load TransformControls
         if (!(window as any).THREE.TransformControls) {
           await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js');
         }
-        // Load GLTFLoader
         if (!(window as any).THREE.GLTFLoader) {
           await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js');
         }
@@ -83,6 +98,7 @@ export function Unified3DScene({
     loadAllScripts();
   }, []);
 
+  // 씬 초기화
   useEffect(() => {
     if (!containerRef.current || !threeLoaded || !(window as any).THREE) return;
 
@@ -134,36 +150,39 @@ export function Unified3DScene({
     // TransformControls (기즈모)
     const transformControls = new THREE.TransformControls(camera, renderer.domElement);
     transformControls.setMode('translate');
-    transformControls.setSize(1);
+    transformControls.setSize(1.2);
+    transformControls.setSpace('world'); // 월드 좌표계 사용
     scene.add(transformControls);
     transformControlsRef.current = transformControls;
 
-    // TransformControls 이벤트
+    // TransformControls 이벤트 - 드래그 시작/종료
     transformControls.addEventListener('dragging-changed', (event: any) => {
       orbitControls.enabled = !event.value;
+      isDraggingGizmoRef.current = event.value;
     });
 
-    transformControls.addEventListener('objectChange', () => {
+    // TransformControls 이벤트 - 객체 변환 중
+    transformControls.addEventListener('change', () => {
       const object = transformControls.object;
-      if (!object || !object.userData.modelId) return;
+      if (!object || !object.userData.modelId || !isDraggingGizmoRef.current) return;
 
       const modelId = object.userData.modelId;
       const mode = transformControls.getMode();
 
-      if (mode === 'translate' && onModelDrag) {
-        onModelDrag(modelId, {
+      if (mode === 'translate' && callbacksRef.current.onModelDrag) {
+        callbacksRef.current.onModelDrag(modelId, {
           x: object.position.x,
           y: object.position.y,
           z: object.position.z,
         });
-      } else if (mode === 'rotate' && onModelRotate) {
-        onModelRotate(modelId, {
+      } else if (mode === 'rotate' && callbacksRef.current.onModelRotate) {
+        callbacksRef.current.onModelRotate(modelId, {
           x: object.rotation.x,
           y: object.rotation.y,
           z: object.rotation.z,
         });
-      } else if (mode === 'scale' && onModelScale) {
-        onModelScale(modelId, object.scale.x);
+      } else if (mode === 'scale' && callbacksRef.current.onModelScale) {
+        callbacksRef.current.onModelScale(modelId, object.scale.x);
       }
     });
 
@@ -189,12 +208,10 @@ export function Unified3DScene({
     scene.add(directionalLight2);
 
     // === 작업대 (Workbench/Ground Plane) ===
-    // 그리드 헬퍼
     const gridHelper = new THREE.GridHelper(20, 20, 0x444466, 0x333355);
     gridHelper.position.y = 0;
     scene.add(gridHelper);
 
-    // 작업대 평면 (그림자 받는 용도)
     const groundGeometry = new THREE.PlaneGeometry(20, 20);
     const groundMaterial = new THREE.MeshStandardMaterial({
       color: 0x2a2a3e,
@@ -208,7 +225,7 @@ export function Unified3DScene({
     ground.name = 'ground';
     scene.add(ground);
 
-    // 축 표시 (원점에 작은 축 헬퍼)
+    // 축 표시 (원점에)
     const axesHelper = new THREE.AxesHelper(2);
     axesHelper.position.set(-9, 0.01, -9);
     scene.add(axesHelper);
@@ -244,13 +261,16 @@ export function Unified3DScene({
     const handleClick = (event: MouseEvent) => {
       if (!containerRef.current || !raycasterRef.current || !cameraRef.current) return;
 
+      // 기즈모 드래그 중이면 무시
+      if (isDraggingGizmoRef.current) return;
+
       const rect = containerRef.current.getBoundingClientRect();
       mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
 
-      // Get all model meshes
+      // Get all model meshes (exclude ground and transform controls)
       const meshes: any[] = [];
       modelsRef.current.forEach((group) => {
         group.traverse((child: any) => {
@@ -265,7 +285,6 @@ export function Unified3DScene({
       if (intersects.length > 0) {
         const clickedMesh = intersects[0].object;
 
-        // Find which model was clicked
         for (const [modelId, group] of modelsRef.current.entries()) {
           let found = false;
           group.traverse((child: any) => {
@@ -275,8 +294,8 @@ export function Unified3DScene({
           });
 
           if (found) {
-            if (onModelClick) {
-              onModelClick(modelId);
+            if (callbacksRef.current.onModelClick) {
+              callbacksRef.current.onModelClick(modelId);
             }
             break;
           }
@@ -297,11 +316,11 @@ export function Unified3DScene({
       transformControls.dispose();
       renderer.dispose();
     };
-  }, [threeLoaded, onModelClick, onModelDrag, onModelRotate, onModelScale]);
+  }, [threeLoaded]);
 
   // Load models
   useEffect(() => {
-    if (!sceneRef.current || !loaderRef.current || !models.length || !threeLoaded || !(window as any).THREE) return;
+    if (!sceneRef.current || !loaderRef.current || !threeLoaded || !(window as any).THREE) return;
 
     const THREE = (window as any).THREE;
 
@@ -317,10 +336,9 @@ export function Unified3DScene({
           modelGroup.add(gltf.scene.clone());
           modelGroup.userData.modelId = model.id;
 
-          // 작업대 위에 배치 (Y = 0)
           modelGroup.position.set(
             model.position.x,
-            Math.max(model.position.y, 0),
+            model.position.y,
             model.position.z
           );
 
@@ -333,7 +351,6 @@ export function Unified3DScene({
           const scale = model.scale || 1;
           modelGroup.scale.set(scale, scale, scale);
 
-          // Enable shadows
           modelGroup.traverse((child: any) => {
             if (child.isMesh) {
               child.castShadow = true;
@@ -393,45 +410,43 @@ export function Unified3DScene({
     });
   }, [models, threeLoaded, selectedModelId]);
 
-  // Update model transforms from props
+  // Update model transforms from props (슬라이더에서 변경 시)
   useEffect(() => {
-    if (!threeLoaded) return;
+    if (!threeLoaded || isDraggingGizmoRef.current) return;
 
     models.forEach((model) => {
       const modelGroup = modelsRef.current.get(model.id);
       if (modelGroup) {
-        // TransformControls가 드래그 중이 아닐 때만 업데이트
-        if (!transformControlsRef.current?.dragging) {
-          modelGroup.position.set(
-            model.position.x,
-            model.position.y,
-            model.position.z
-          );
-          modelGroup.rotation.set(
-            model.rotation.x,
-            model.rotation.y,
-            model.rotation.z
-          );
-          modelGroup.scale.set(model.scale, model.scale, model.scale);
-        }
+        modelGroup.position.set(
+          model.position.x,
+          model.position.y,
+          model.position.z
+        );
+        modelGroup.rotation.set(
+          model.rotation.x,
+          model.rotation.y,
+          model.rotation.z
+        );
+        modelGroup.scale.set(model.scale, model.scale, model.scale);
       }
     });
   }, [models, threeLoaded]);
 
-  // Handle selected model change - attach TransformControls
+  // Handle selected model change - attach/detach TransformControls
   useEffect(() => {
     if (!threeLoaded || !transformControlsRef.current) return;
 
     if (selectedModelId) {
       const modelGroup = modelsRef.current.get(selectedModelId);
       if (modelGroup) {
-        // Check if model is locked
         const modelData = models.find(m => m.id === selectedModelId);
         if (modelData?.locked) {
           transformControlsRef.current.detach();
         } else {
           transformControlsRef.current.attach(modelGroup);
         }
+      } else {
+        transformControlsRef.current.detach();
       }
     } else {
       transformControlsRef.current.detach();
