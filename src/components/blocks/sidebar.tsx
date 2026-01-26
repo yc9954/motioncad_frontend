@@ -212,13 +212,14 @@ const Sidebar = React.forwardRef<
       <div
         ref={ref}
         className={cn(
-          "group hidden md:flex text-sidebar-foreground bg-sidebar transition-[width] duration-200 ease-linear",
+          "group hidden md:flex text-sidebar-foreground bg-sidebar",
           "h-svh flex-shrink-0",
+          "transition-[width,opacity] duration-300 ease-in-out",
           open 
-            ? "w-[--sidebar-width]" 
+            ? "w-[--sidebar-width] opacity-100" 
             : collapsible === "icon" 
-              ? "w-[--sidebar-width-icon]"
-              : "w-0",
+              ? "w-[--sidebar-width-icon] opacity-100"
+              : "w-0 opacity-0",
           side === "left" ? "border-r" : "border-l",
           className
         )}
@@ -231,7 +232,11 @@ const Sidebar = React.forwardRef<
           <div
             data-sidebar="sidebar"
             data-collapsible={!open ? collapsible : ""}
-            className="flex h-full w-full flex-col overflow-hidden"
+            className={cn(
+              "flex h-full w-full flex-col overflow-hidden",
+              "transition-opacity duration-300 ease-in-out",
+              open ? "opacity-100" : "opacity-0 pointer-events-none"
+            )}
           >
             {children}
           </div>
@@ -408,6 +413,7 @@ const SidebarMenu = React.forwardRef<
     ref={ref}
     data-sidebar="menu"
     className={cn("flex w-full min-w-0 flex-col gap-1", className)}
+    style={{ animation: "none" }}
     {...props}
   />
 ));
@@ -421,6 +427,7 @@ const SidebarMenuItem = React.forwardRef<
     ref={ref}
     data-sidebar="menu-item"
     className={cn("group/menu-item relative", className)}
+    style={{ animation: "none", transition: "none" }}
     {...props}
   />
 ));

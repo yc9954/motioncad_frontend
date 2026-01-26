@@ -19,7 +19,6 @@ import {
   User,
   ChevronsUpDown,
   Home,
-  Edit,
   Sparkles,
   Settings,
   Folder,
@@ -35,11 +34,6 @@ const menuItems = [
     title: "Home",
     id: "home",
     icon: Home,
-  },
-  {
-    title: "Edit",
-    id: "edit",
-    icon: Edit,
   },
   {
     title: "Prompting",
@@ -143,7 +137,7 @@ interface DashboardPageProps {
   onNavigateToBuilder?: () => void;
 }
 
-type TabId = "home" | "edit" | "prompting" | "profile";
+type TabId = "home" | "prompting" | "profile";
 
 export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
   const [activeTab, setActiveTab] = useState<TabId>("home");
@@ -218,21 +212,6 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
             </div>
           </div>
         );
-      case "edit":
-        return (
-          <div className="p-6">
-            <h1 className="text-2xl font-bold mb-4">Edit Mode</h1>
-            <p className="text-muted-foreground">3D 디오라마 편집 기능이 여기에 표시됩니다.</p>
-            {onNavigateToBuilder && (
-              <button 
-                onClick={onNavigateToBuilder}
-                className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-              >
-                Open Builder
-              </button>
-            )}
-          </div>
-        );
       case "prompting":
         return <PromptingTab />;
       case "profile":
@@ -271,11 +250,10 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <Sidebar collapsible="icon">
+      <Sidebar>
         <SidebarHeader>
-          <div className="flex items-center justify-between px-2">
-            <span className="text-sm font-semibold whitespace-nowrap data-[collapsible=icon]:hidden">Navigation</span>
-            <SidebarTrigger className="h-6 w-6" />
+          <div className="flex items-center px-2">
+            <span className="text-sm font-semibold whitespace-nowrap">Navigation</span>
           </div>
         </SidebarHeader>
         <SidebarContent>
@@ -284,11 +262,12 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
             <SidebarGroupContent>
               <SidebarMenu>
                 {menuItems.map((item) => (
-                  <SidebarMenuItem key={item.id}>
+                  <SidebarMenuItem key={item.id} style={{ animation: "none" }}>
                     <SidebarMenuButton 
                       tooltip={item.title}
                       isActive={activeTab === item.id}
                       onClick={() => setActiveTab(item.id as TabId)}
+                      style={{ animation: "none" }}
                     >
                       <item.icon />
                       <span>{item.title}</span>
@@ -302,31 +281,32 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
 
         <SidebarFooter>
           <SidebarGroup>
-            <SidebarMenuButton className="w-full justify-between gap-3 h-12 data-[collapsible=icon]:justify-center">
+            <SidebarMenuButton className="w-full justify-between gap-3 h-12">
               <div className="flex items-center gap-2">
                 <User className="h-5 w-5 rounded-md flex-shrink-0" />
-                <div className="flex flex-col items-start data-[collapsible=icon]:hidden">
+                <div className="flex flex-col items-start">
                   <span className="text-sm font-medium">John Doe</span>
                   <span className="text-xs text-muted-foreground">john@example.com</span>
                 </div>
               </div>
-              <ChevronsUpDown className="h-5 w-5 rounded-md flex-shrink-0 data-[collapsible=icon]:hidden" />
+              <ChevronsUpDown className="h-5 w-5 rounded-md flex-shrink-0" />
             </SidebarMenuButton>
           </SidebarGroup>
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset>
-        <div className="px-4 py-2 border-b flex items-center gap-2">
+      <SidebarInset className="flex flex-col overflow-hidden">
+        <div className="px-4 py-2 border-b flex items-center gap-2 flex-shrink-0">
           <SidebarTrigger />
           <h1 className="text-lg font-semibold">
             {activeTab === "home" && "Home"}
-            {activeTab === "edit" && "Edit"}
             {activeTab === "prompting" && "Prompting"}
             {activeTab === "profile" && "Profile Settings"}
           </h1>
         </div>
-        {renderContent()}
+        <div className="flex-1 overflow-hidden">
+          {renderContent()}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   )
