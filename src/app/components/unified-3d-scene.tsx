@@ -5,9 +5,10 @@ interface Unified3DSceneProps {
     id: string;
     modelUrl: string;
     name: string;
-    position: { x: number; y: number; z?: number };
-    rotation?: { x: number; y: number; z: number };
-    scale?: number;
+    position: { x: number; y: number; z: number };
+    rotation: { x: number; y: number; z: number };
+    scale: number;
+    locked?: boolean;
   }>;
   selectedModelId?: string | null;
   onModelClick?: (modelId: string) => void;
@@ -205,7 +206,7 @@ export function Unified3DScene({
       mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouseRef.current, camera);
-      
+
       // Get all meshes from models
       const meshes: any[] = [];
       modelsRef.current.forEach((group) => {
@@ -221,7 +222,7 @@ export function Unified3DScene({
       if (intersects.length > 0 && !isDraggingRef.current) {
         const intersect = intersects[0];
         const clickedMesh = intersect.object;
-        
+
         // Find which model was clicked
         for (const [modelId, group] of modelsRef.current.entries()) {
           let found = false;
@@ -230,17 +231,25 @@ export function Unified3DScene({
               found = true;
             }
           });
-          
+
           if (found) {
-            isDraggingRef.current = true;
-            dragModelIdRef.current = modelId;
-            
-            // Set drag plane at model's Y position
-            const modelY = group.position.y;
-            dragPlaneRef.current.constant = modelY;
-            
+            // Check if the model is locked
+            const modelData = models.find(m => m.id === modelId);
+            const isLocked = modelData?.locked ?? false;
+
+            // Always trigger click for selection
             if (onModelClick) {
               onModelClick(modelId);
+            }
+
+            // Only allow dragging if not locked
+            if (!isLocked) {
+              isDraggingRef.current = true;
+              dragModelIdRef.current = modelId;
+
+              // Set drag plane at model's Y position
+              const modelY = group.position.y;
+              dragPlaneRef.current.constant = modelY;
             }
             break;
           }
@@ -356,22 +365,29 @@ export function Unified3DScene({
     });
   }, [models, threeLoaded]);
 
-  // Update model positions
+  // Update model positions, rotations, and scales
   useEffect(() => {
     if (!threeLoaded) return;
-    
+
     models.forEach((model) => {
       const modelGroup = modelsRef.current.get(model.id);
       if (modelGroup) {
+        // Update position
         modelGroup.position.set(
           model.position.x,
           model.position.y,
-          model.position.z || 0
+          model.position.z
         );
-        
-        if (model.scale) {
-          modelGroup.scale.set(model.scale, model.scale, model.scale);
-        }
+
+        // Update rotation
+        modelGroup.rotation.set(
+          model.rotation.x,
+          model.rotation.y,
+          model.rotation.z
+        );
+
+        // Update scale
+        modelGroup.scale.set(model.scale, model.scale, model.scale);
       }
     });
   }, [models, threeLoaded]);

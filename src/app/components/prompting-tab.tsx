@@ -1,13 +1,51 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Card } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Textarea } from "@/app/components/ui/textarea";
 import { Badge } from "@/app/components/ui/badge";
-import { Loader2, Sparkles, CheckCircle2, XCircle, Download, Plus, Image as ImageIcon, Settings, Grid3x3, Upload, X } from "lucide-react";
+import { Input } from "@/app/components/ui/input";
+import { Slider } from "@/app/components/ui/slider";
+import {
+  Loader2, Sparkles, XCircle, Download, Plus, Image as ImageIcon,
+  Grid3x3, Upload, X, Trash2, Copy, Eye, EyeOff, Lock, Unlock,
+  Move, RotateCcw, Maximize2, Layers, FolderPlus, Save, FileDown,
+  ChevronDown, ChevronRight, GripVertical
+} from "lucide-react";
 import { toast } from "sonner";
 import { generate3DModel, checkTaskStatus } from "@/lib/tripo-api";
 import { ModelViewer } from "@/app/components/model-viewer";
 import { Unified3DScene } from "@/app/components/unified-3d-scene";
+
+// 씬 모델 타입 정의
+interface SceneModel {
+  id: string;
+  modelUrl?: string;
+  name: string;
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number };
+  scale: number;
+  visible: boolean;
+  locked: boolean;
+  groupId?: string;
+}
+
+// 모델 그룹 타입 정의
+interface ModelGroup {
+  id: string;
+  name: string;
+  modelIds: string[];
+  expanded: boolean;
+}
+
+// 디오라마 타입 정의
+interface Diorama {
+  id: string;
+  name: string;
+  models: SceneModel[];
+  groups: ModelGroup[];
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 export function PromptingTab() {
   // 환경 변수에서 API 키 가져오기
@@ -29,15 +67,9 @@ export function PromptingTab() {
   const [taskProgress, setTaskProgress] = useState<number | null>(null);
   const [taskStatusDetail, setTaskStatusDetail] = useState<string>("");
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [sceneModels, setSceneModels] = useState<Array<{
-    id: string;
-    modelUrl?: string;
-    name: string;
-    position?: { x: number; y: number; z?: number };
-    rotation?: { x: number; y: number; z: number };
-    scale?: number;
-  }>>([]);
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [sceneModels, setSceneModels] = useState<SceneModel[]>([]);
+  const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
+  const [modelGroups, setModelGroups] = useState<ModelGroup[]>([]);
   const [draggingModelId, setDraggingModelId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{
@@ -47,6 +79,13 @@ export function PromptingTab() {
     type: "image" | "model";
   }>>([]);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [transformMode, setTransformMode] = useState<"position" | "rotation" | "scale">("position");
+  const [dioramaName, setDioramaName] = useState("새 디오라마");
+  const [savedDioramas, setSavedDioramas] = useState<Diorama[]>([]);
+
+  // 첫 번째 선택된 모델 (단일 선택용)
+  const selectedModelId = selectedModelIds.length === 1 ? selectedModelIds[0] : null;
+  const selectedModel = selectedModelId ? sceneModels.find(m => m.id === selectedModelId) : null;
 
   // 추천 에셋 목록 (예시)
   const recommendedAssets = [
@@ -345,19 +384,222 @@ export function PromptingTab() {
 
   const handleAddToScene = (model: { modelUrl?: string; prompt?: string; taskId?: string }) => {
     if (model.modelUrl) {
-      const newModel = {
+      const newModel: SceneModel = {
         id: model.taskId || `model-${Date.now()}`,
         modelUrl: model.modelUrl,
         name: model.prompt || "3D 모델",
         position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
         scale: 1,
+        visible: true,
+        locked: false,
       };
       setSceneModels((prev) => [...prev, newModel]);
+      setSelectedModelIds([newModel.id]);
       toast.success("씬에 추가되었습니다.");
     } else {
       toast.error("모델을 씬에 추가할 수 없습니다.");
     }
   };
+
+  // 모델 복제
+  const handleDuplicateModel = useCallback((modelId: string) => {
+    const model = sceneModels.find(m => m.id === modelId);
+    if (!model) return;
+
+    const newModel: SceneModel = {
+      ...model,
+      id: `model-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: `${model.name} (복사본)`,
+      position: {
+        x: model.position.x + 0.5,
+        y: model.position.y,
+        z: model.position.z + 0.5
+      },
+      groupId: undefined,
+    };
+    setSceneModels((prev) => [...prev, newModel]);
+    setSelectedModelIds([newModel.id]);
+    toast.success("모델이 복제되었습니다.");
+  }, [sceneModels]);
+
+  // 모델 표시/숨김 토글
+  const handleToggleVisibility = useCallback((modelId: string) => {
+    setSceneModels((prev) =>
+      prev.map((model) =>
+        model.id === modelId ? { ...model, visible: !model.visible } : model
+      )
+    );
+  }, []);
+
+  // 모델 잠금/해제 토글
+  const handleToggleLock = useCallback((modelId: string) => {
+    setSceneModels((prev) =>
+      prev.map((model) =>
+        model.id === modelId ? { ...model, locked: !model.locked } : model
+      )
+    );
+  }, []);
+
+  // 모델 변환 업데이트
+  const handleTransformUpdate = useCallback((
+    modelId: string,
+    property: "position" | "rotation" | "scale",
+    axis: "x" | "y" | "z" | "uniform",
+    value: number
+  ) => {
+    setSceneModels((prev) =>
+      prev.map((model) => {
+        if (model.id !== modelId || model.locked) return model;
+
+        if (property === "scale") {
+          return { ...model, scale: value };
+        } else {
+          return {
+            ...model,
+            [property]: { ...model[property], [axis]: value }
+          };
+        }
+      })
+    );
+  }, []);
+
+  // 그룹 생성
+  const handleCreateGroup = useCallback(() => {
+    if (selectedModelIds.length < 2) {
+      toast.error("그룹을 만들려면 2개 이상의 모델을 선택하세요.");
+      return;
+    }
+
+    const groupId = `group-${Date.now()}`;
+    const newGroup: ModelGroup = {
+      id: groupId,
+      name: `그룹 ${modelGroups.length + 1}`,
+      modelIds: [...selectedModelIds],
+      expanded: true,
+    };
+
+    setModelGroups((prev) => [...prev, newGroup]);
+    setSceneModels((prev) =>
+      prev.map((model) =>
+        selectedModelIds.includes(model.id) ? { ...model, groupId } : model
+      )
+    );
+    toast.success("그룹이 생성되었습니다.");
+  }, [selectedModelIds, modelGroups.length]);
+
+  // 그룹 해제
+  const handleUngroupModels = useCallback((groupId: string) => {
+    setSceneModels((prev) =>
+      prev.map((model) =>
+        model.groupId === groupId ? { ...model, groupId: undefined } : model
+      )
+    );
+    setModelGroups((prev) => prev.filter((g) => g.id !== groupId));
+    toast.success("그룹이 해제되었습니다.");
+  }, []);
+
+  // 그룹 펼치기/접기
+  const handleToggleGroupExpand = useCallback((groupId: string) => {
+    setModelGroups((prev) =>
+      prev.map((group) =>
+        group.id === groupId ? { ...group, expanded: !group.expanded } : group
+      )
+    );
+  }, []);
+
+  // 디오라마 저장
+  const handleSaveDiorama = useCallback(() => {
+    const diorama: Diorama = {
+      id: `diorama-${Date.now()}`,
+      name: dioramaName,
+      models: [...sceneModels],
+      groups: [...modelGroups],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // 로컬 스토리지에 저장
+    const existingDioramas = JSON.parse(localStorage.getItem("dioramas") || "[]");
+    existingDioramas.push(diorama);
+    localStorage.setItem("dioramas", JSON.stringify(existingDioramas));
+
+    setSavedDioramas((prev) => [...prev, diorama]);
+    toast.success(`"${dioramaName}" 디오라마가 저장되었습니다.`);
+  }, [dioramaName, sceneModels, modelGroups]);
+
+  // 디오라마 내보내기 (JSON)
+  const handleExportDiorama = useCallback(() => {
+    const diorama = {
+      name: dioramaName,
+      models: sceneModels.map(m => ({
+        id: m.id,
+        name: m.name,
+        modelUrl: m.modelUrl,
+        position: m.position,
+        rotation: m.rotation,
+        scale: m.scale,
+        visible: m.visible,
+        locked: m.locked,
+        groupId: m.groupId,
+      })),
+      groups: modelGroups,
+      exportedAt: new Date().toISOString(),
+    };
+
+    const blob = new Blob([JSON.stringify(diorama, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${dioramaName.replace(/\s+/g, "_")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("디오라마가 내보내졌습니다.");
+  }, [dioramaName, sceneModels, modelGroups]);
+
+  // 디오라마 불러오기
+  const handleImportDiorama = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (data.models) {
+          setSceneModels(data.models.map((m: any) => ({
+            ...m,
+            visible: m.visible ?? true,
+            locked: m.locked ?? false,
+          })));
+        }
+        if (data.groups) {
+          setModelGroups(data.groups);
+        }
+        if (data.name) {
+          setDioramaName(data.name);
+        }
+        toast.success("디오라마를 불러왔습니다.");
+      } catch {
+        toast.error("디오라마 파일을 읽을 수 없습니다.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }, []);
+
+  // 모델 선택 핸들러 (다중 선택 지원)
+  const handleModelSelect = useCallback((modelId: string, multiSelect: boolean = false) => {
+    if (multiSelect) {
+      setSelectedModelIds((prev) =>
+        prev.includes(modelId)
+          ? prev.filter((id) => id !== modelId)
+          : [...prev, modelId]
+      );
+    } else {
+      setSelectedModelIds([modelId]);
+    }
+  }, []);
 
   // 3D 씬에서 모델 위치 업데이트
   const handleModelPositionUpdate = (modelId: string, position: { x: number; y: number; z: number }) => {
@@ -478,24 +720,29 @@ export function PromptingTab() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
-    
+
     try {
       const dragData = JSON.parse(e.dataTransfer.getData("application/json"));
-      
-      // 3D 씬 중앙 좌표 (3D 공간 기준)
-      const centerX = 0;
+
+      // 씬에 이미 있는 모델 수에 따라 오프셋 적용
+      const offset = sceneModels.length * 0.5;
+      const centerX = offset;
       const centerY = 0;
-      const centerZ = 0;
-      
+      const centerZ = offset;
+
       if (dragData.type === "generated" && dragData.modelUrl) {
-        const newModel = {
+        const newModel: SceneModel = {
           id: dragData.taskId || `model-${Date.now()}`,
           modelUrl: dragData.modelUrl,
           name: dragData.name || dragData.prompt || "3D 모델",
           position: { x: centerX, y: centerY, z: centerZ },
+          rotation: { x: 0, y: 0, z: 0 },
           scale: 1,
+          visible: true,
+          locked: false,
         };
         setSceneModels((prev) => [...prev, newModel]);
+        setSelectedModelIds([newModel.id]);
         toast.success("씬에 추가되었습니다.");
       } else if (dragData.type === "uploaded" && dragData.file) {
         // 업로드된 파일의 경우
@@ -504,14 +751,18 @@ export function PromptingTab() {
           if (uploadedFile.type === "model") {
             // 3D 모델 파일인 경우
             const fileUrl = URL.createObjectURL(uploadedFile.file);
-            const newModel = {
+            const newModel: SceneModel = {
               id: uploadedFile.id,
               modelUrl: fileUrl,
               name: uploadedFile.file.name,
               position: { x: centerX, y: centerY, z: centerZ },
+              rotation: { x: 0, y: 0, z: 0 },
               scale: 1,
+              visible: true,
+              locked: false,
             };
             setSceneModels((prev) => [...prev, newModel]);
+            setSelectedModelIds([newModel.id]);
             toast.success("씬에 추가되었습니다.");
           } else {
             // 이미지 파일인 경우
@@ -541,7 +792,7 @@ export function PromptingTab() {
   };
 
   // 모델 삭제 핸들러
-  const handleModelDelete = (modelId: string) => {
+  const handleModelDelete = useCallback((modelId: string) => {
     setSceneModels((prev) => {
       const model = prev.find(m => m.id === modelId);
       // Blob URL인 경우 메모리 해제
@@ -550,21 +801,71 @@ export function PromptingTab() {
       }
       return prev.filter(m => m.id !== modelId);
     });
-    setSelectedModelId(null);
+    // 그룹에서도 제거
+    setModelGroups((prev) =>
+      prev.map((group) => ({
+        ...group,
+        modelIds: group.modelIds.filter((id) => id !== modelId),
+      })).filter((group) => group.modelIds.length > 0)
+    );
+    setSelectedModelIds((prev) => prev.filter((id) => id !== modelId));
     toast.success("모델이 삭제되었습니다.");
-  };
+  }, []);
+
+  // 선택된 모든 모델 삭제
+  const handleDeleteSelectedModels = useCallback(() => {
+    if (selectedModelIds.length === 0) return;
+
+    selectedModelIds.forEach((id) => {
+      const model = sceneModels.find(m => m.id === id);
+      if (model?.modelUrl && model.modelUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(model.modelUrl);
+      }
+    });
+
+    setSceneModels((prev) => prev.filter((m) => !selectedModelIds.includes(m.id)));
+    setModelGroups((prev) =>
+      prev.map((group) => ({
+        ...group,
+        modelIds: group.modelIds.filter((id) => !selectedModelIds.includes(id)),
+      })).filter((group) => group.modelIds.length > 0)
+    );
+    setSelectedModelIds([]);
+    toast.success(`${selectedModelIds.length}개 모델이 삭제되었습니다.`);
+  }, [selectedModelIds, sceneModels]);
 
   // 모델 클릭 핸들러
-  const handleModelClick = (modelId: string) => {
-    setSelectedModelId(modelId);
-  };
+  const handleModelClick = useCallback((modelId: string) => {
+    setSelectedModelIds([modelId]);
+  }, []);
 
   // 뷰포트 클릭 핸들러 (배경 클릭 시 선택 해제)
   const handleViewportClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
-      setSelectedModelId(null);
+      setSelectedModelIds([]);
     }
   };
+
+  // 모델 이름 변경
+  const handleRenameModel = useCallback((modelId: string, newName: string) => {
+    setSceneModels((prev) =>
+      prev.map((model) =>
+        model.id === modelId ? { ...model, name: newName } : model
+      )
+    );
+  }, []);
+
+  // 그룹 이름 변경
+  const handleRenameGroup = useCallback((groupId: string, newName: string) => {
+    setModelGroups((prev) =>
+      prev.map((group) =>
+        group.id === groupId ? { ...group, name: newName } : group
+      )
+    );
+  }, []);
+
+  // 그룹이 없는 모델들
+  const ungroupedModels = sceneModels.filter((m) => !m.groupId);
 
   // 모델 드래그 시작 핸들러
   const handleModelDragStart = (e: React.MouseEvent, modelId: string) => {
@@ -911,18 +1212,15 @@ export function PromptingTab() {
           <div className="absolute inset-0">
             <Unified3DScene
               models={sceneModels
-                .filter(m => m.modelUrl)
+                .filter(m => m.modelUrl && m.visible)
                 .map(m => ({
                   id: m.id,
                   modelUrl: m.modelUrl!,
                   name: m.name,
-                  position: { 
-                    x: m.position?.x || 0, 
-                    y: m.position?.y || 0, 
-                    z: m.position?.z || 0 
-                  },
-                  rotation: m.rotation || { x: 0, y: 0, z: 0 },
-                  scale: m.scale || 1,
+                  position: m.position,
+                  rotation: m.rotation,
+                  scale: m.scale,
+                  locked: m.locked,
                 }))}
               selectedModelId={selectedModelId}
               onModelClick={handleModelClick}
@@ -945,124 +1243,485 @@ export function PromptingTab() {
         )}
       </div>
 
-      {/* 오른쪽 패널: 에셋 결과물 및 라이브러리 */}
+      {/* 오른쪽 패널: 씬 관리 및 에셋 조합 */}
       <div className="w-80 border-l bg-sidebar flex flex-col">
-        {/* 생성된 에셋 결과물 (한 줄로) */}
+        {/* 디오라마 헤더 */}
         <div className="p-4 border-b">
-          <h3 className="text-sm font-semibold mb-3">생성된 에셋</h3>
-          {generatedModels.length > 0 ? (
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              {generatedModels.map((model, index) => (
-                <Card 
-                  key={index} 
-                  className={`min-w-[120px] flex-shrink-0 ${
-                    model.modelUrl && !model.isLoading ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"
-                  }`}
-                  draggable={!!model.modelUrl && !model.isLoading}
-                  onDragStart={(e) => handleDragStart(e, model)}
+          <div className="flex items-center gap-2 mb-3">
+            <Input
+              value={dioramaName}
+              onChange={(e) => setDioramaName(e.target.value)}
+              className="h-8 text-sm font-semibold"
+              placeholder="디오라마 이름"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" className="flex-1" onClick={handleSaveDiorama}>
+              <Save className="h-3 w-3 mr-1" />
+              저장
+            </Button>
+            <Button size="sm" variant="outline" className="flex-1" onClick={handleExportDiorama}>
+              <FileDown className="h-3 w-3 mr-1" />
+              내보내기
+            </Button>
+            <label className="flex-1">
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={handleImportDiorama}
+              />
+              <Button size="sm" variant="outline" className="w-full" asChild>
+                <span>
+                  <Upload className="h-3 w-3 mr-1" />
+                  불러오기
+                </span>
+              </Button>
+            </label>
+          </div>
+        </div>
+
+        {/* 씬 모델 목록 */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-4 border-b">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold">씬 오브젝트 ({sceneModels.length})</h3>
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0"
+                  onClick={handleCreateGroup}
+                  disabled={selectedModelIds.length < 2}
+                  title="그룹 만들기"
                 >
-                  <div className="aspect-square bg-muted rounded-t-lg overflow-hidden relative">
-                    {/* 모델이 완료되고 URL이 있을 때만 뷰어 표시 */}
-                    {model.modelUrl && !model.isLoading ? (
-                      <div className="w-full h-full">
-                        <ModelViewer
-                          src={model.modelUrl}
-                          alt="3D 모델"
-                          className="w-full h-full"
-                        />
-                      </div>
-                    ) : model.previewImageUrl && !model.isLoading ? (
-                      <img
-                        src={model.previewImageUrl}
-                        alt="미리보기"
-                        className="w-full h-full object-cover"
+                  <FolderPlus className="h-3 w-3" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0"
+                  onClick={handleDeleteSelectedModels}
+                  disabled={selectedModelIds.length === 0}
+                  title="선택 삭제"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+
+            {sceneModels.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground text-sm">
+                <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>씬에 모델을 추가하세요</p>
+                <p className="text-xs mt-1">에셋을 드래그하여 조합하세요</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {/* 그룹화된 모델들 */}
+                {modelGroups.map((group) => (
+                  <div key={group.id} className="border rounded-lg overflow-hidden">
+                    <div
+                      className="flex items-center gap-2 p-2 bg-muted/50 cursor-pointer hover:bg-muted"
+                      onClick={() => handleToggleGroupExpand(group.id)}
+                    >
+                      {group.expanded ? (
+                        <ChevronDown className="h-3 w-3" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3" />
+                      )}
+                      <Layers className="h-3 w-3 text-primary" />
+                      <Input
+                        value={group.name}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleRenameGroup(group.id, e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-5 text-xs bg-transparent border-none p-0 focus-visible:ring-0"
                       />
-                    ) : (
-                      /* 로딩 중일 때 로딩 인디케이터와 진행률 표시 */
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-muted p-2">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
-                        {model.progress !== undefined && model.progress !== null && (
-                          <>
-                            <div className="w-full bg-background/50 rounded-full h-1.5 mb-1">
-                              <div
-                                className="bg-primary h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${Math.min(model.progress, 100)}%` }}
-                              />
-                            </div>
-                            <span className="text-xs font-medium text-foreground">
-                              {model.progress}%
-                            </span>
-                          </>
-                        )}
-                        {(!model.progress && model.progress !== 0) && (
-                          <span className="text-xs text-muted-foreground">
-                            {model.status === "queued" ? "대기 중..." : "생성 중..."}
-                          </span>
-                        )}
+                      <Badge variant="secondary" className="ml-auto text-[10px]">
+                        {group.modelIds.length}
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-5 w-5 p-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUngroupModels(group.id);
+                        }}
+                        title="그룹 해제"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    {group.expanded && (
+                      <div className="pl-4">
+                        {sceneModels
+                          .filter((m) => m.groupId === group.id)
+                          .map((model) => (
+                            <ModelListItem
+                              key={model.id}
+                              model={model}
+                              isSelected={selectedModelIds.includes(model.id)}
+                              onSelect={(multi) => handleModelSelect(model.id, multi)}
+                              onDelete={() => handleModelDelete(model.id)}
+                              onDuplicate={() => handleDuplicateModel(model.id)}
+                              onToggleVisibility={() => handleToggleVisibility(model.id)}
+                              onToggleLock={() => handleToggleLock(model.id)}
+                              onRename={(name) => handleRenameModel(model.id, name)}
+                            />
+                          ))}
                       </div>
                     )}
                   </div>
-                  <div className="p-2 space-y-1">
-                    <p className="text-xs text-muted-foreground truncate">
-                      {model.prompt || "생성 중..."}
-                    </p>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-2 flex-1"
-                        onClick={() => handleDownload(model)}
-                        disabled={!model.modelUrl || model.isLoading}
-                      >
-                        <Download className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-2 flex-1"
-                        onClick={() => handleAddToScene(model)}
-                        disabled={!model.modelUrl || model.isLoading}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
+                ))}
+
+                {/* 그룹화되지 않은 모델들 */}
+                {ungroupedModels.map((model) => (
+                  <ModelListItem
+                    key={model.id}
+                    model={model}
+                    isSelected={selectedModelIds.includes(model.id)}
+                    onSelect={(multi) => handleModelSelect(model.id, multi)}
+                    onDelete={() => handleModelDelete(model.id)}
+                    onDuplicate={() => handleDuplicateModel(model.id)}
+                    onToggleVisibility={() => handleToggleVisibility(model.id)}
+                    onToggleLock={() => handleToggleLock(model.id)}
+                    onRename={(name) => handleRenameModel(model.id, name)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 선택된 모델 변환 컨트롤 */}
+          {selectedModel && (
+            <div className="p-4 border-b">
+              <h3 className="text-sm font-semibold mb-3">변환 (Transform)</h3>
+
+              {/* 변환 모드 선택 */}
+              <div className="flex gap-1 mb-4">
+                <Button
+                  size="sm"
+                  variant={transformMode === "position" ? "default" : "outline"}
+                  className="flex-1 h-7"
+                  onClick={() => setTransformMode("position")}
+                >
+                  <Move className="h-3 w-3 mr-1" />
+                  위치
+                </Button>
+                <Button
+                  size="sm"
+                  variant={transformMode === "rotation" ? "default" : "outline"}
+                  className="flex-1 h-7"
+                  onClick={() => setTransformMode("rotation")}
+                >
+                  <RotateCcw className="h-3 w-3 mr-1" />
+                  회전
+                </Button>
+                <Button
+                  size="sm"
+                  variant={transformMode === "scale" ? "default" : "outline"}
+                  className="flex-1 h-7"
+                  onClick={() => setTransformMode("scale")}
+                >
+                  <Maximize2 className="h-3 w-3 mr-1" />
+                  크기
+                </Button>
+              </div>
+
+              {/* 위치 컨트롤 */}
+              {transformMode === "position" && (
+                <div className="space-y-3">
+                  {(["x", "y", "z"] as const).map((axis) => (
+                    <div key={axis} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium uppercase">{axis}</label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedModel.position[axis].toFixed(2)}
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedModel.position[axis]]}
+                        min={-10}
+                        max={10}
+                        step={0.1}
+                        onValueChange={([value]) =>
+                          handleTransformUpdate(selectedModel.id, "position", axis, value)
+                        }
+                        disabled={selectedModel.locked}
+                      />
                     </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 회전 컨트롤 */}
+              {transformMode === "rotation" && (
+                <div className="space-y-3">
+                  {(["x", "y", "z"] as const).map((axis) => (
+                    <div key={axis} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium uppercase">{axis}</label>
+                        <span className="text-xs text-muted-foreground">
+                          {((selectedModel.rotation[axis] * 180) / Math.PI).toFixed(0)}°
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedModel.rotation[axis]]}
+                        min={-Math.PI}
+                        max={Math.PI}
+                        step={0.01}
+                        onValueChange={([value]) =>
+                          handleTransformUpdate(selectedModel.id, "rotation", axis, value)
+                        }
+                        disabled={selectedModel.locked}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 크기 컨트롤 */}
+              {transformMode === "scale" && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium">균일 크기</label>
+                    <span className="text-xs text-muted-foreground">
+                      {(selectedModel.scale * 100).toFixed(0)}%
+                    </span>
                   </div>
+                  <Slider
+                    value={[selectedModel.scale]}
+                    min={0.1}
+                    max={5}
+                    step={0.1}
+                    onValueChange={([value]) =>
+                      handleTransformUpdate(selectedModel.id, "scale", "uniform", value)
+                    }
+                    disabled={selectedModel.locked}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 생성된 에셋 (드래그 가능) */}
+          <div className="p-4 border-b">
+            <h3 className="text-sm font-semibold mb-3">생성된 에셋</h3>
+            {generatedModels.length > 0 ? (
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {generatedModels.map((model, index) => (
+                  <Card
+                    key={index}
+                    className={`min-w-[100px] flex-shrink-0 ${
+                      model.modelUrl && !model.isLoading ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"
+                    }`}
+                    draggable={!!model.modelUrl && !model.isLoading}
+                    onDragStart={(e) => handleDragStart(e, model)}
+                  >
+                    <div className="aspect-square bg-muted rounded-t-lg overflow-hidden relative">
+                      {model.modelUrl && !model.isLoading ? (
+                        <div className="w-full h-full">
+                          <ModelViewer src={model.modelUrl} alt="3D 모델" className="w-full h-full" />
+                        </div>
+                      ) : model.previewImageUrl && !model.isLoading ? (
+                        <img src={model.previewImageUrl} alt="미리보기" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-muted p-2">
+                          <Loader2 className="h-5 w-5 animate-spin text-primary mb-1" />
+                          {model.progress !== undefined && model.progress !== null && (
+                            <span className="text-[10px] font-medium">{model.progress}%</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-1.5">
+                      <p className="text-[10px] text-muted-foreground truncate">{model.prompt || "생성 중..."}</p>
+                      <div className="flex gap-0.5 mt-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 px-1.5 flex-1"
+                          onClick={() => handleAddToScene(model)}
+                          disabled={!model.modelUrl || model.isLoading}
+                        >
+                          <Plus className="h-2.5 w-2.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 px-1.5 flex-1"
+                          onClick={() => handleDownload(model)}
+                          disabled={!model.modelUrl || model.isLoading}
+                        >
+                          <Download className="h-2.5 w-2.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-4 text-muted-foreground text-xs">
+                <ImageIcon className="h-6 w-6 mx-auto mb-1 opacity-50" />
+                <p>생성된 모델이 없습니다</p>
+              </div>
+            )}
+          </div>
+
+          {/* 추천 에셋 */}
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold">추천 에셋</h3>
+              <Button variant="ghost" size="sm" className="h-6 px-2">
+                <Grid3x3 className="h-3 w-3" />
+              </Button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {recommendedAssets.map((asset) => (
+                <Card
+                  key={asset.id}
+                  className="p-2 cursor-grab active:cursor-grabbing hover:bg-accent transition-colors"
+                  draggable={true}
+                  onDragStart={(e) => handleDragStart(e, asset)}
+                >
+                  <div className="aspect-square bg-muted rounded flex items-center justify-center mb-1 text-2xl">
+                    {asset.thumbnail}
+                  </div>
+                  <p className="text-[10px] font-medium truncate text-center">{asset.name}</p>
                 </Card>
               ))}
             </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              <ImageIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>생성된 모델이 없습니다</p>
-            </div>
-          )}
+          </div>
         </div>
+      </div>
+    </div>
+  );
+}
 
-        {/* 라이브러리 및 추천 에셋 (2열 그리드) */}
-        <div className="flex-1 p-4 overflow-y-auto">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold">추천 에셋</h3>
-            <Button variant="ghost" size="sm" className="h-6 px-2">
-              <Grid3x3 className="h-3 w-3" />
-            </Button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {recommendedAssets.map((asset) => (
-              <Card
-                key={asset.id}
-                className="p-3 cursor-grab active:cursor-grabbing hover:bg-accent transition-colors"
-                draggable={true}
-                onDragStart={(e) => handleDragStart(e, asset)}
-              >
-                <div className="aspect-square bg-muted rounded-lg flex items-center justify-center mb-2 text-3xl">
-                  {asset.thumbnail}
-                </div>
-                <p className="text-xs font-medium truncate">{asset.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{asset.category}</p>
-              </Card>
-            ))}
-          </div>
-        </div>
+// 모델 리스트 아이템 컴포넌트
+function ModelListItem({
+  model,
+  isSelected,
+  onSelect,
+  onDelete,
+  onDuplicate,
+  onToggleVisibility,
+  onToggleLock,
+  onRename,
+}: {
+  model: SceneModel;
+  isSelected: boolean;
+  onSelect: (multiSelect: boolean) => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
+  onToggleVisibility: () => void;
+  onToggleLock: () => void;
+  onRename: (name: string) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(model.name);
+
+  const handleRename = () => {
+    if (editName.trim() && editName !== model.name) {
+      onRename(editName.trim());
+    }
+    setIsEditing(false);
+  };
+
+  return (
+    <div
+      className={`flex items-center gap-1 p-1.5 rounded cursor-pointer transition-colors ${
+        isSelected ? "bg-primary/20 border border-primary/50" : "hover:bg-muted"
+      } ${!model.visible ? "opacity-50" : ""}`}
+      onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey)}
+    >
+      <GripVertical className="h-3 w-3 text-muted-foreground flex-shrink-0 cursor-grab" />
+
+      <div className="w-6 h-6 bg-muted rounded flex items-center justify-center flex-shrink-0">
+        <div className="text-[10px]">📦</div>
+      </div>
+
+      {isEditing ? (
+        <Input
+          value={editName}
+          onChange={(e) => setEditName(e.target.value)}
+          onBlur={handleRename}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleRename();
+            if (e.key === "Escape") {
+              setEditName(model.name);
+              setIsEditing(false);
+            }
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="h-5 text-xs flex-1 min-w-0"
+          autoFocus
+        />
+      ) : (
+        <span
+          className="text-xs truncate flex-1 min-w-0"
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            setIsEditing(true);
+          }}
+        >
+          {model.name}
+        </span>
+      )}
+
+      <div className="flex items-center gap-0.5 flex-shrink-0">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-5 w-5 p-0"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleVisibility();
+          }}
+          title={model.visible ? "숨기기" : "보이기"}
+        >
+          {model.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-5 w-5 p-0"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleLock();
+          }}
+          title={model.locked ? "잠금 해제" : "잠금"}
+        >
+          {model.locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-5 w-5 p-0"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDuplicate();
+          }}
+          title="복제"
+        >
+          <Copy className="h-3 w-3" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-5 w-5 p-0 text-destructive hover:text-destructive"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          title="삭제"
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
       </div>
     </div>
   );
