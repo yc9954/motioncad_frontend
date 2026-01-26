@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { Card } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Textarea } from "@/app/components/ui/textarea";
@@ -49,6 +49,7 @@ interface Diorama {
 
 export function PromptingTab() {
   // 환경 변수에서 API 키 가져오기
+  // @ts-ignore - Vite 환경 변수 타입
   const apiKey = import.meta.env.VITE_TRIPO_API_KEY;
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -915,7 +916,7 @@ export function PromptingTab() {
 
     setDraggingModelId(modelId);
     setDragOffset({ x: offsetX, y: offsetY });
-    setSelectedModelId(modelId);
+    setSelectedModelIds([modelId]);
   };
 
   // 모델 드래그 핸들러
@@ -930,7 +931,7 @@ export function PromptingTab() {
     setSceneModels((prev) =>
       prev.map((model) =>
         model.id === draggingModelId
-          ? { ...model, position: { x: newX, y: newY } }
+          ? { ...model, position: { x: newX, y: newY, z: model.position.z } }
           : model
       )
     );

@@ -1,3 +1,4 @@
+import React from 'react';
 import { Badge } from '@/app/components/ui/badge';
 import { Hand, Square, Circle, ArrowUp, Grab, ZoomIn } from 'lucide-react';
 
