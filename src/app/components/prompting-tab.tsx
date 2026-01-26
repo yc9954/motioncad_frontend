@@ -1195,8 +1195,8 @@ export function PromptingTab() {
       </div>
 
       {/* 가운데: 3D 편집 뷰포트 */}
-      <div 
-        className={`flex-1 bg-[#16171f] relative overflow-hidden transition-all duration-200 ${
+      <div
+        className={`flex-1 bg-white relative overflow-hidden transition-all duration-200 ${
           isDraggingOver ? "ring-2 ring-primary ring-offset-2" : ""
         }`}
         onDrop={handleDrop}
@@ -1213,31 +1213,27 @@ export function PromptingTab() {
           </div>
         )}
 
-        {/* Ambient Glow Effects */}
-        <div className="absolute top-20 left-20 w-96 h-96 bg-[#00d4ff]/5 rounded-full blur-[100px] pointer-events-none" />
-        <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-500/5 rounded-full blur-[100px] pointer-events-none" />
-
         {/* 3D 뷰포트 컨텐츠 */}
         {sceneModels.length === 0 ? (
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center bg-white">
             <div className="text-center">
               <div className="w-32 h-32 mx-auto mb-4 relative">
-                <svg viewBox="0 0 100 100" className="w-full h-full opacity-30">
+                <svg viewBox="0 0 100 100" className="w-full h-full opacity-40">
                   <defs>
                     <linearGradient id="cubeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" style={{ stopColor: '#00d4ff', stopOpacity: 1 }} />
-                      <stop offset="100%" style={{ stopColor: '#0088ff', stopOpacity: 1 }} />
+                      <stop offset="0%" style={{ stopColor: '#888888', stopOpacity: 1 }} />
+                      <stop offset="100%" style={{ stopColor: '#aaaaaa', stopOpacity: 1 }} />
                     </linearGradient>
                   </defs>
                   <polygon points="50,20 80,35 80,65 50,80 20,65 20,35" fill="none" stroke="url(#cubeGradient)" strokeWidth="2"/>
                   <line x1="50" y1="20" x2="50" y2="50" stroke="url(#cubeGradient)" strokeWidth="2"/>
                   <line x1="20" y1="35" x2="50" y2="50" stroke="url(#cubeGradient)" strokeWidth="2"/>
                   <line x1="80" y1="35" x2="50" y2="50" stroke="url(#cubeGradient)" strokeWidth="2"/>
-                  <circle cx="50" cy="50" r="4" fill="#00d4ff" className="animate-pulse"/>
+                  <circle cx="50" cy="50" r="4" fill="#888888" className="animate-pulse"/>
                 </svg>
               </div>
               <p className="text-gray-500 text-sm">3D 편집 뷰포트</p>
-              <p className="text-gray-600 text-xs mt-1">에셋을 드래그하여 씬에 추가하세요</p>
+              <p className="text-gray-400 text-xs mt-1">에셋을 드래그하여 씬에 추가하세요</p>
             </div>
           </div>
         ) : (

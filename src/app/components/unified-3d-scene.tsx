@@ -106,7 +106,7 @@ export function Unified3DScene({
 
     // Scene setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a2e);
+    scene.background = new THREE.Color(0xffffff);
     sceneRef.current = scene;
 
     // Camera setup
@@ -208,15 +208,15 @@ export function Unified3DScene({
     scene.add(directionalLight2);
 
     // === 작업대 (Workbench/Ground Plane) ===
-    const gridHelper = new THREE.GridHelper(20, 20, 0x444466, 0x333355);
+    const gridHelper = new THREE.GridHelper(20, 20, 0xcccccc, 0xe0e0e0);
     gridHelper.position.y = 0;
     scene.add(gridHelper);
 
     const groundGeometry = new THREE.PlaneGeometry(20, 20);
     const groundMaterial = new THREE.MeshStandardMaterial({
-      color: 0x2a2a3e,
-      roughness: 0.8,
-      metalness: 0.2,
+      color: 0xfafafa,
+      roughness: 0.9,
+      metalness: 0.0,
     });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
@@ -489,7 +489,7 @@ export function Unified3DScene({
 
   if (!threeLoaded) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#1a1a2e]">
+      <div className="w-full h-full flex items-center justify-center bg-white">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
           <div className="text-gray-500 text-sm">3D 씬 로딩 중...</div>
