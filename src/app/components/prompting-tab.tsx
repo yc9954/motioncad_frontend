@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { Card } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Textarea } from "@/app/components/ui/textarea";
@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { generate3DModel, checkTaskStatus } from "@/lib/tripo-api";
 import { ModelViewer } from "@/app/components/model-viewer";
 import { Unified3DScene } from "@/app/components/unified-3d-scene";
+import { TravelCard } from "@/app/components/ui/travel-card";
 
 // 씬 모델 타입 정의
 interface SceneModel {
@@ -47,7 +48,12 @@ interface Diorama {
   updatedAt: Date;
 }
 
-export function PromptingTab() {
+interface PromptingTabProps {
+  initialModelUrl?: string;
+  initialModelName?: string;
+}
+
+export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTabProps = {}) {
   // 환경 변수에서 API 키 가져오기
   // @ts-ignore - Vite 환경 변수 타입
   const apiKey = import.meta.env.VITE_TRIPO_API_KEY;
@@ -88,15 +94,143 @@ export function PromptingTab() {
   const selectedModelId = selectedModelIds.length === 1 ? selectedModelIds[0] : null;
   const selectedModel = selectedModelId ? sceneModels.find(m => m.id === selectedModelId) : null;
 
-  // 추천 에셋 목록 (예시)
-  const recommendedAssets = [
-    { id: 1, name: "의자", thumbnail: "🪑", category: "가구" },
-    { id: 2, name: "테이블", thumbnail: "🪑", category: "가구" },
-    { id: 3, name: "램프", thumbnail: "💡", category: "조명" },
-    { id: 4, name: "화분", thumbnail: "🪴", category: "장식" },
-    { id: 5, name: "책장", thumbnail: "📚", category: "가구" },
-    { id: 6, name: "소파", thumbnail: "🛋️", category: "가구" },
-  ];
+  // 추천 에셋 목록 - Three.js 예제에서 사용하는 실제 GLB 파일 URL 사용
+  // 썸네일은 GLB 파일에서 생성되거나 기본 이미지 사용
+  const [recommendedAssets, setRecommendedAssets] = useState<Array<{
+    id: number;
+    name: string;
+    thumbnail?: string;
+    category: string;
+    glbUrl: string;
+    thumbnailUrl?: string;
+  }>>([
+    { 
+      id: 1, 
+      name: "의자", 
+      thumbnail: "🪑", 
+      category: "가구",
+      glbUrl: "https://threejs.org/examples/models/gltf/Chair/glTF-Binary/Chair.glb",
+      thumbnailUrl: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop"
+    },
+    { 
+      id: 2, 
+      name: "테이블", 
+      thumbnail: "🪑", 
+      category: "가구",
+      glbUrl: "https://threejs.org/examples/models/gltf/Duck/glTF-Binary/Duck.glb",
+      thumbnailUrl: "https://images.unsplash.com/photo-1532372320572-cda25653a26d?w=400&h=300&fit=crop"
+    },
+    { 
+      id: 3, 
+      name: "램프", 
+      thumbnail: "💡", 
+      category: "조명",
+      glbUrl: "https://threejs.org/examples/models/gltf/Lantern/glTF-Binary/Lantern.glb",
+      thumbnailUrl: "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=400&h=300&fit=crop"
+    },
+    { 
+      id: 4, 
+      name: "화분", 
+      thumbnail: "🪴", 
+      category: "장식",
+      glbUrl: "https://threejs.org/examples/models/gltf/Avocado/glTF-Binary/Avocado.glb",
+      thumbnailUrl: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=300&fit=crop"
+    },
+    { 
+      id: 5, 
+      name: "책장", 
+      thumbnail: "📚", 
+      category: "가구",
+      glbUrl: "https://threejs.org/examples/models/gltf/DamagedHelmet/glTF-Binary/DamagedHelmet.glb",
+      thumbnailUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=300&fit=crop"
+    },
+    { 
+      id: 6, 
+      name: "소파", 
+      thumbnail: "🛋️", 
+      category: "가구",
+      glbUrl: "https://threejs.org/examples/models/gltf/FlightHelmet/glTF-Binary/FlightHelmet.glb",
+      thumbnailUrl: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=400&h=300&fit=crop"
+    },
+  ]);
+
+  // GLB URL에서 직접 썸네일 생성하는 함수
+  const generateThumbnailFromGLBUrl = async (glbUrl: string): Promise<string | null> => {
+    try {
+      // GLB 파일을 fetch하여 File 객체로 변환
+      const response = await fetch(glbUrl);
+      if (!response.ok) {
+        console.warn(`Failed to fetch GLB from ${glbUrl}:`, response.statusText);
+        return null;
+      }
+      const blob = await response.blob();
+      const file = new File([blob], 'model.glb', { type: 'model/gltf-binary' });
+      
+      // 썸네일 생성
+      return await generateThumbnailFromGLB(file);
+    } catch (error) {
+      console.error(`Error generating thumbnail from URL ${glbUrl}:`, error);
+      return null;
+    }
+  };
+
+  // 초기 모델 로드 (대시보드에서 프로젝트 클릭 시)
+  useEffect(() => {
+    if (initialModelUrl && initialModelName) {
+      // 이미 같은 모델이 있는지 확인
+      const existingModel = sceneModels.find(m => m.modelUrl === initialModelUrl);
+      if (!existingModel) {
+        const offset = sceneModels.length * 0.5;
+        const centerX = offset;
+        const centerY = 0;
+        const centerZ = offset;
+        
+        const newModel: SceneModel = {
+          id: `initial-${Date.now()}`,
+          modelUrl: initialModelUrl,
+          name: initialModelName,
+          position: { x: centerX, y: centerY, z: centerZ },
+          rotation: { x: 0, y: 0, z: 0 },
+          scale: 1,
+          visible: true,
+          locked: false,
+        };
+        
+        setSceneModels((prev) => [...prev, newModel]);
+        setSelectedModelIds([newModel.id]);
+        toast.success(`${initialModelName}이(가) 씬에 추가되었습니다.`);
+      }
+    }
+  }, [initialModelUrl, initialModelName, sceneModels]);
+
+  // 추천 에셋 썸네일 생성 (GLB에서 생성 시도, 실패하면 하드코딩된 썸네일 사용)
+  useEffect(() => {
+    const generateThumbnails = async () => {
+      const updatedAssets = await Promise.all(
+        recommendedAssets.map(async (asset) => {
+          // 이미 썸네일 URL이 있으면 스킵 (하드코딩된 썸네일 사용)
+          if (asset.thumbnailUrl && asset.thumbnailUrl.startsWith('http')) {
+            return asset;
+          }
+
+          try {
+            // GLB URL에서 썸네일 생성 시도
+            const thumbnail = await generateThumbnailFromGLBUrl(asset.glbUrl);
+            if (thumbnail) {
+              return { ...asset, thumbnailUrl: thumbnail };
+            }
+          } catch (error) {
+            console.error(`Error generating thumbnail for ${asset.name}:`, error);
+          }
+          // 썸네일 생성 실패 시 하드코딩된 썸네일 유지
+          return asset;
+        })
+      );
+      setRecommendedAssets(updatedAssets);
+    };
+
+    generateThumbnails();
+  }, []); // 초기 마운트 시 한 번만 실행
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -988,8 +1122,27 @@ export function PromptingTab() {
             toast.info("이미지 파일은 3D 모델로 변환 후 씬에 추가할 수 있습니다.");
           }
         }
+      } else if (dragData.type === "recommended" && dragData.modelUrl) {
+        // 추천 에셋의 경우 - 실제 GLB 파일 URL 사용
+        const offset = sceneModels.length * 0.5;
+        const centerX = offset;
+        const centerY = 0;
+        const centerZ = offset;
+        
+        const newModel: SceneModel = {
+          id: `recommended-${dragData.name}-${Date.now()}`,
+          modelUrl: dragData.modelUrl,
+          name: dragData.name || "추천 에셋",
+          position: { x: centerX, y: centerY, z: centerZ },
+          rotation: { x: 0, y: 0, z: 0 },
+          scale: 1,
+          visible: true,
+          locked: false,
+        };
+        setSceneModels((prev) => [...prev, newModel]);
+        setSelectedModelIds([newModel.id]);
+        toast.success("씬에 추가되었습니다.");
       } else if (dragData.type === "recommended") {
-        // 추천 에셋의 경우 (실제 모델 URL이 없을 수 있음)
         toast.info(`"${dragData.name}" 에셋을 씬에 추가하려면 먼저 생성해주세요.`);
       }
     } catch (err) {
@@ -1814,26 +1967,60 @@ export function PromptingTab() {
 
           {/* 추천 에셋 */}
           <div className="p-4">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold">추천 에셋</h3>
               <Button variant="ghost" size="sm" className="h-6 px-2">
                 <Grid3x3 className="h-3 w-3" />
               </Button>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {recommendedAssets.map((asset) => (
-                <Card
-                  key={asset.id}
-                  className="p-2 cursor-grab active:cursor-grabbing hover:bg-accent transition-colors"
-                  draggable={true}
-                  onDragStart={(e) => handleDragStart(e, asset)}
-                >
-                  <div className="aspect-square bg-muted rounded flex items-center justify-center mb-1 text-2xl">
-                    {asset.thumbnail}
+            <div className="grid grid-cols-2 gap-3">
+              {recommendedAssets.map((asset) => {
+                const thumbnailUrl = asset.thumbnailUrl;
+                const imageUrl = thumbnailUrl 
+                  ? thumbnailUrl 
+                  : `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(asset.name)}`;
+                
+                return (
+                  <div
+                    key={asset.id}
+                    draggable={true}
+                    onDragStart={(e) => handleDragStart(e, {
+                      ...asset,
+                      modelUrl: asset.glbUrl,
+                      thumbnail: asset.thumbnailUrl || asset.thumbnail,
+                    })}
+                    className="cursor-grab active:cursor-grabbing"
+                  >
+                    <TravelCard
+                      imageUrl={imageUrl}
+                      imageAlt={asset.name}
+                      title={asset.name}
+                      location={asset.category || "3D Model"}
+                      overview={`A 3D ${asset.name} model. Drag and drop into the scene to add it.`}
+                      onBookNow={() => {
+                        // 드래그 앤 드롭 대신 클릭으로도 추가 가능하도록
+                        if (asset.glbUrl) {
+                          const offset = sceneModels.length * 0.5;
+                          const newModel: SceneModel = {
+                            id: `recommended-${asset.id}-${Date.now()}`,
+                            modelUrl: asset.glbUrl,
+                            name: asset.name,
+                            position: { x: offset, y: 0, z: offset },
+                            rotation: { x: 0, y: 0, z: 0 },
+                            scale: 1,
+                            visible: true,
+                            locked: false,
+                          };
+                          setSceneModels((prev) => [...prev, newModel]);
+                          setSelectedModelIds([newModel.id]);
+                          toast.success(`${asset.name}이(가) 씬에 추가되었습니다.`);
+                        }
+                      }}
+                      className="h-[200px]"
+                    />
                   </div>
-                  <p className="text-[10px] font-medium truncate text-center">{asset.name}</p>
-                </Card>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

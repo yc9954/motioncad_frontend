@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Sidebar,
   SidebarProvider,
@@ -27,6 +27,7 @@ import {
 import { Card } from "@/app/components/ui/card"
 import { Badge } from "@/app/components/ui/badge"
 import { PromptingTab } from "@/app/components/prompting-tab"
+import { TravelCard } from "@/app/components/ui/travel-card"
 
 // Menu items
 const menuItems = [
@@ -47,58 +48,70 @@ const menuItems = [
   },
 ]
 
-// Mock data for projects
+// Projects with Three.js example models
 const mockProjects = [
   {
     id: 1,
-    title: "Fantasy Castle",
-    author: "John Doe",
-    thumbnail: "🏰",
+    title: "Chair Model",
+    author: "Three.js Examples",
+    thumbnail: "🪑",
+    glbUrl: "https://threejs.org/examples/models/gltf/Chair/glTF-Binary/Chair.glb",
+    thumbnailUrl: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop",
     createdAt: "2 days ago",
     views: 1234,
     likes: 89,
   },
   {
     id: 2,
-    title: "Space Station",
-    author: "Jane Smith",
-    thumbnail: "🚀",
+    title: "Duck Model",
+    author: "Three.js Examples",
+    thumbnail: "🦆",
+    glbUrl: "https://threejs.org/examples/models/gltf/Duck/glTF-Binary/Duck.glb",
+    thumbnailUrl: "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=400&h=300&fit=crop",
     createdAt: "5 days ago",
     views: 2341,
     likes: 156,
   },
   {
     id: 3,
-    title: "Medieval Village",
-    author: "Bob Johnson",
-    thumbnail: "🏘️",
+    title: "Lantern Model",
+    author: "Three.js Examples",
+    thumbnail: "💡",
+    glbUrl: "https://threejs.org/examples/models/gltf/Lantern/glTF-Binary/Lantern.glb",
+    thumbnailUrl: "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=400&h=300&fit=crop",
     createdAt: "1 week ago",
     views: 3456,
     likes: 234,
   },
   {
     id: 4,
-    title: "Underwater City",
-    author: "Alice Williams",
-    thumbnail: "🌊",
+    title: "Avocado Model",
+    author: "Three.js Examples",
+    thumbnail: "🥑",
+    glbUrl: "https://threejs.org/examples/models/gltf/Avocado/glTF-Binary/Avocado.glb",
+    thumbnailUrl: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=300&fit=crop",
     createdAt: "3 days ago",
     views: 1890,
     likes: 112,
   },
   {
     id: 5,
-    title: "Cyberpunk Street",
-    author: "Charlie Brown",
-    thumbnail: "🌃",
+    title: "Damaged Helmet",
+    author: "Three.js Examples",
+    thumbnail: "⛑️",
+    glbUrl: "https://threejs.org/examples/models/gltf/DamagedHelmet/glTF-Binary/DamagedHelmet.glb",
+    thumbnailUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=300&fit=crop",
     createdAt: "1 day ago",
     views: 4567,
     likes: 345,
   },
   {
     id: 6,
-    title: "Forest Temple",
-    author: "Diana Prince",
-    thumbnail: "🌲",
+    title: "Flight Helmet",
+    author: "Three.js Examples",
+    thumbnail: "🪖",
+    glbUrl: "https://threejs.org/examples/models/gltf/FlightHelmet/glTF-Binary/FlightHelmet.glb",
+    thumbnailUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=300&fit=crop",
     createdAt: "4 days ago",
     views: 2789,
     likes: 198,
@@ -141,6 +154,200 @@ type TabId = "home" | "prompting" | "profile";
 
 export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
   const [activeTab, setActiveTab] = useState<TabId>("home");
+  const [projectThumbnails, setProjectThumbnails] = useState<Record<number, string>>(() => {
+    // 초기 썸네일을 mockProjects의 thumbnailUrl로 설정
+    const initialThumbnails: Record<number, string> = {};
+    mockProjects.forEach(project => {
+      if (project.thumbnailUrl) {
+        initialThumbnails[project.id] = project.thumbnailUrl;
+      }
+    });
+    return initialThumbnails;
+  });
+  const [selectedProject, setSelectedProject] = useState<{ glbUrl: string; name: string } | null>(null);
+
+  // GLB 썸네일 생성 함수 (prompting-tab의 함수와 유사한 로직)
+  const generateThumbnailFromGLB = async (file: File): Promise<string | null> => {
+    try {
+      const THREE = await import('three');
+      const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+
+      // 오프스크린 렌더러 생성
+      const width = 512;
+      const height = 512;
+      const pixelRatio = Math.min(window.devicePixelRatio, 2);
+      const renderer = new THREE.WebGLRenderer({ 
+        antialias: true, 
+        alpha: true,
+        preserveDrawingBuffer: true,
+        powerPreference: "high-performance",
+      });
+      renderer.setSize(width * pixelRatio, height * pixelRatio, false);
+      renderer.setPixelRatio(pixelRatio);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.outputEncoding = THREE.sRGBEncoding;
+
+      // 씬 생성
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xfafafa);
+
+      // 카메라 설정
+      const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
+      camera.position.set(3, 3, 3);
+      camera.lookAt(0, 0, 0);
+
+      // 조명 설정
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+      scene.add(ambientLight);
+      
+      const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1);
+      directionalLight1.position.set(5, 10, 5);
+      directionalLight1.castShadow = true;
+      scene.add(directionalLight1);
+      
+      const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+      directionalLight2.position.set(-5, 5, -5);
+      scene.add(directionalLight2);
+
+      // 파일 URL 생성
+      const fileUrl = URL.createObjectURL(file);
+
+      // 모델 로드
+      const loader = new GLTFLoader();
+      
+      return new Promise((resolve) => {
+        loader.load(
+          fileUrl,
+          (gltf: any) => {
+            try {
+              const model = gltf.scene.clone();
+
+              // 모델 바운딩 박스 계산
+              const box = new THREE.Box3().setFromObject(model);
+              
+              if (box.isEmpty()) {
+                throw new Error('모델이 비어있습니다.');
+              }
+
+              const center = box.getCenter(new THREE.Vector3());
+              const size = box.getSize(new THREE.Vector3());
+              const maxDim = Math.max(size.x, size.y, size.z);
+              
+              if (maxDim === 0) {
+                throw new Error('모델 크기가 0입니다.');
+              }
+
+              const scale = 1.5 / maxDim;
+              model.scale.multiplyScalar(scale);
+              model.position.sub(center.multiplyScalar(scale));
+              scene.add(model);
+
+              // 카메라 위치 조정
+              const newBox = new THREE.Box3().setFromObject(model);
+              const newCenter = newBox.getCenter(new THREE.Vector3());
+              const newSize = newBox.getSize(new THREE.Vector3());
+              const newMaxDim = Math.max(newSize.x, newSize.y, newSize.z);
+              
+              const distance = newMaxDim * 2.5;
+              camera.position.set(
+                newCenter.x + distance * 0.7,
+                newCenter.y + distance * 0.7,
+                newCenter.z + distance * 0.7
+              );
+              camera.lookAt(newCenter);
+              camera.updateProjectionMatrix();
+
+              // 렌더링
+              renderer.render(scene, camera);
+
+              // 캔버스를 이미지로 변환
+              const dataUrl = renderer.domElement.toDataURL('image/png', 0.9);
+              
+              // 정리
+              URL.revokeObjectURL(fileUrl);
+              renderer.dispose();
+              scene.clear();
+              model.traverse((child: any) => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                  if (Array.isArray(child.material)) {
+                    child.material.forEach((mat: any) => mat.dispose());
+                  } else {
+                    child.material.dispose();
+                  }
+                }
+              });
+              
+              resolve(dataUrl);
+            } catch (error) {
+              console.error('Error processing model:', error);
+              URL.revokeObjectURL(fileUrl);
+              renderer.dispose();
+              scene.clear();
+              resolve(null);
+            }
+          },
+          undefined,
+          (error: any) => {
+            console.error('Error loading GLB:', error);
+            URL.revokeObjectURL(fileUrl);
+            renderer.dispose();
+            scene.clear();
+            resolve(null);
+          }
+        );
+      });
+    } catch (error) {
+      console.error('Error generating thumbnail:', error);
+      return null;
+    }
+  };
+
+  // GLB URL에서 썸네일 생성
+  const generateThumbnailFromGLBUrl = async (glbUrl: string): Promise<string | null> => {
+    try {
+      const response = await fetch(glbUrl);
+      if (!response.ok) {
+        console.warn(`Failed to fetch GLB from ${glbUrl}:`, response.statusText);
+        return null;
+      }
+      const blob = await response.blob();
+      const file = new File([blob], 'model.glb', { type: 'model/gltf-binary' });
+      return await generateThumbnailFromGLB(file);
+    } catch (error) {
+      console.error(`Error generating thumbnail from URL ${glbUrl}:`, error);
+      return null;
+    }
+  };
+
+  // 프로젝트 썸네일 생성
+  useEffect(() => {
+    if (activeTab !== "home") return;
+    
+    const generateThumbnails = async () => {
+      const thumbnails: Record<number, string> = {};
+      
+      for (const project of mockProjects) {
+        if (project.glbUrl && !projectThumbnails[project.id]) {
+          try {
+            const thumbnail = await generateThumbnailFromGLBUrl(project.glbUrl);
+            if (thumbnail) {
+              thumbnails[project.id] = thumbnail;
+            }
+          } catch (error) {
+            console.error(`Error loading thumbnail for ${project.title}:`, error);
+          }
+        }
+      }
+      
+      if (Object.keys(thumbnails).length > 0) {
+        setProjectThumbnails(prev => ({ ...prev, ...thumbnails }));
+      }
+    };
+
+    generateThumbnails();
+  }, [activeTab, projectThumbnails]);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -155,21 +362,32 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
                   View all →
                 </button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {mockProjects.map((project) => (
-                  <Card key={project.id} className="p-4 hover:shadow-lg transition-shadow cursor-pointer">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="text-4xl">{project.thumbnail}</div>
-                      <Badge variant="secondary">{project.views} views</Badge>
-                    </div>
-                    <h3 className="font-semibold text-lg mb-1">{project.title}</h3>
-                    <p className="text-sm text-muted-foreground mb-2">by {project.author}</p>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{project.createdAt}</span>
-                      <span>❤️ {project.likes}</span>
-                    </div>
-                  </Card>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {mockProjects.map((project) => {
+                  // 하드코딩된 썸네일 URL 우선 사용, 없으면 생성된 썸네일, 없으면 기본 이미지
+                  const thumbnailUrl = project.thumbnailUrl || projectThumbnails[project.id];
+                  const imageUrl = thumbnailUrl 
+                    ? thumbnailUrl 
+                    : `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(project.title)}`;
+                  
+                  return (
+                    <TravelCard
+                      key={project.id}
+                      imageUrl={imageUrl}
+                      imageAlt={project.title}
+                      title={project.title}
+                      location={`by ${project.author}`}
+                      overview={`A 3D model created ${project.createdAt}. This project has ${project.views} views and ${project.likes} likes. Click to open and edit in the 3D editor.`}
+                      onBookNow={() => {
+                        if (project.glbUrl) {
+                          setSelectedProject({ glbUrl: project.glbUrl, name: project.title });
+                          setActiveTab("prompting");
+                        }
+                      }}
+                      className="h-[350px]"
+                    />
+                  );
+                })}
               </div>
             </div>
 
@@ -213,7 +431,10 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
           </div>
         );
       case "prompting":
-        return <PromptingTab />;
+        return <PromptingTab 
+          initialModelUrl={selectedProject?.glbUrl}
+          initialModelName={selectedProject?.name}
+        />;
       case "profile":
         return (
           <div className="p-6">
@@ -295,7 +516,7 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className="flex flex-col overflow-hidden">
+      <SidebarInset className="flex flex-col h-screen overflow-hidden">
         <div className="px-4 py-2 border-b flex items-center gap-2 flex-shrink-0">
           <SidebarTrigger />
           <h1 className="text-lg font-semibold">
@@ -304,7 +525,7 @@ export function DashboardPage({ onNavigateToBuilder }: DashboardPageProps) {
             {activeTab === "profile" && "Profile Settings"}
           </h1>
         </div>
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
           {renderContent()}
         </div>
       </SidebarInset>

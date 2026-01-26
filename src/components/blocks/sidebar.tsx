@@ -213,7 +213,7 @@ const Sidebar = React.forwardRef<
         ref={ref}
         className={cn(
           "group hidden md:flex text-sidebar-foreground bg-sidebar",
-          "h-svh flex-shrink-0",
+          "h-screen flex-shrink-0",
           "transition-[width,opacity] duration-300 ease-in-out",
           open 
             ? "w-[--sidebar-width] opacity-100" 
@@ -229,17 +229,17 @@ const Sidebar = React.forwardRef<
         data-side={side}
         {...props}
       >
-          <div
-            data-sidebar="sidebar"
-            data-collapsible={!open ? collapsible : ""}
-            className={cn(
-              "flex h-full w-full flex-col overflow-hidden",
-              "transition-opacity duration-300 ease-in-out",
-              open ? "opacity-100" : "opacity-0 pointer-events-none"
-            )}
-          >
-            {children}
-          </div>
+        <div
+          data-sidebar="sidebar"
+          data-collapsible={!open ? collapsible : ""}
+          className={cn(
+            "flex h-full w-full flex-col",
+            "transition-opacity duration-300 ease-in-out",
+            open ? "opacity-100" : "opacity-0 pointer-events-none"
+          )}
+        >
+          {children}
+        </div>
       </div>
     );
   }
@@ -280,7 +280,7 @@ const SidebarInset = React.forwardRef<
     <main
       ref={ref}
       className={cn(
-        "relative flex min-h-svh flex-1 flex-col bg-background overflow-auto",
+        "relative flex min-h-svh flex-1 flex-col bg-background",
         className
       )}
       {...props}
