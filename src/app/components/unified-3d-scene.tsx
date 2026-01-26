@@ -245,11 +245,11 @@ export function Unified3DScene({
     scene.add(directionalLight2);
 
     // === 작업대 (Workbench/Ground Plane) ===
-    // 그리드 헬퍼 - 훨씬 촘촘하게 설정 (40x40 그리드)
-    const gridHelper = new THREE.GridHelper(20, 40, 0x888888, 0xcccccc);
+    // 그리드 헬퍼 - 매우 촘촘하고 선명하게 설정 (80x80 그리드)
+    const gridHelper = new THREE.GridHelper(20, 80, 0x666666, 0x999999);
     gridHelper.position.y = 0;
-    gridHelper.material.opacity = 0.8;
-    gridHelper.material.transparent = true;
+    gridHelper.material.opacity = 1.0; // 완전 불투명으로 선명하게
+    gridHelper.material.transparent = false; // 불투명으로 설정
     scene.add(gridHelper);
 
     // 평면 지면
