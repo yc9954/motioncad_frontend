@@ -68,6 +68,8 @@ export function Unified3DScene({
   const lastCheckedFileIdRef = useRef<string | null>(null);
   const lastLogTimeRef = useRef<{ [key: string]: number }>({});
   const lastToastTimeRef = useRef<{ [key: string]: number }>({});
+  // transferMode를 ref에 저장하여 항상 최신 값 참조
+  const transferModeRef = useRef<'send' | 'receive'>(transferMode);
 
   // 콜백을 ref에 저장하여 항상 최신 값 참조
   const callbacksRef = useRef({
@@ -77,7 +79,7 @@ export function Unified3DScene({
     onModelScale,
   });
 
-  // 콜백 업데이트
+  // 콜백 및 transferMode 업데이트
   useEffect(() => {
     callbacksRef.current = {
       onModelClick,
@@ -85,7 +87,8 @@ export function Unified3DScene({
       onModelRotate,
       onModelScale,
     };
-  }, [onModelClick, onModelDrag, onModelRotate, onModelScale]);
+    transferModeRef.current = transferMode;
+  }, [onModelClick, onModelDrag, onModelRotate, onModelScale, transferMode]);
 
   // Load Three.js and all required controls from CDN
   useEffect(() => {
@@ -894,13 +897,7 @@ export function Unified3DScene({
           
           // 손바닥을 펴고 있는 상태 감지
           if (openPalmHand) {
-            if (!wasOpenPalmRef.current) {
-              // 로그 중복 방지: 1초에 한 번만
-              if (!lastLogTimeRef.current['openPalm'] || now - lastLogTimeRef.current['openPalm'] > 1000) {
-                console.log('[Transfer] 손바닥 감지됨');
-                lastLogTimeRef.current['openPalm'] = now;
-              }
-            }
+            // 손바닥 감지 로그 제거 - 너무 자주 출력됨
             wasOpenPalmRef.current = true;
             // 그랩 타이머 리셋
             if (grabTimerRef.current) {
@@ -927,22 +924,20 @@ export function Unified3DScene({
             if (!wasOpenPalmRef.current) {
               // 손바닥을 펴지 않고 바로 그랩한 경우 - 손바닥 상태로 간주
               wasOpenPalmRef.current = true;
-              if (!lastLogTimeRef.current['grabNoPalm'] || now - lastLogTimeRef.current['grabNoPalm'] > 2000) {
-                console.log('[Transfer] 그랩 감지됨 (손바닥 상태 없이) - 손바닥 상태로 설정');
-                lastLogTimeRef.current['grabNoPalm'] = now;
-              }
+              // 로그 제거 - 너무 자주 출력됨
               return;
             }
 
             // 그랩 시작 시간 기록
             if (grabStartTimeRef.current === null) {
               grabStartTimeRef.current = now;
-              if (!lastLogTimeRef.current['grabStart'] || now - lastLogTimeRef.current['grabStart'] > 2000) {
-                console.log(`[Transfer] 그랩 감지됨 - ${transferMode === 'send' ? '전송' : '수신'} 모드`);
+              const currentMode = transferModeRef.current;
+              if (!lastLogTimeRef.current['grabStart'] || now - lastLogTimeRef.current['grabStart'] > 3000) {
+                console.log(`[Transfer] 그랩 감지됨 - ${currentMode === 'send' ? '전송' : '수신'} 모드`);
                 lastLogTimeRef.current['grabStart'] = now;
               }
-              if (!lastToastTimeRef.current['grabStart'] || now - lastToastTimeRef.current['grabStart'] > 2000) {
-                toast.info(`${transferMode === 'send' ? '전송' : '수신'} 준비 중... 2초간 유지하세요`);
+              if (!lastToastTimeRef.current['grabStart'] || now - lastToastTimeRef.current['grabStart'] > 3000) {
+                toast.info(`${currentMode === 'send' ? '전송' : '수신'} 준비 중... 2초간 유지하세요`);
                 lastToastTimeRef.current['grabStart'] = now;
               }
             }
@@ -954,17 +949,15 @@ export function Unified3DScene({
             if (grabDuration >= 2000) {
               // 2초 경과 - 전송/수신 상태로 전환
               if (transferStateRef.current === 'idle') {
-                if (!lastLogTimeRef.current['grabComplete'] || now - lastLogTimeRef.current['grabComplete'] > 2000) {
-                  console.log(`[Transfer] 2초 경과 - ${transferMode === 'send' ? '전송' : '수신'} 시작`);
+                const currentMode = transferModeRef.current;
+                if (!lastLogTimeRef.current['grabComplete'] || now - lastLogTimeRef.current['grabComplete'] > 5000) {
+                  console.log(`[Transfer] 2초 경과 - ${currentMode === 'send' ? '전송' : '수신'} 시작`);
                   lastLogTimeRef.current['grabComplete'] = now;
                 }
-                if (transferMode === 'send') {
+                if (currentMode === 'send') {
                   handleSendGLB();
                 } else {
-                  transferStateRef.current = 'receiving';
-                  if (onTransferStateChange) {
-                    onTransferStateChange('receiving');
-                  }
+                  // handleReceiveGLB 내부에서 상태를 설정하므로 여기서는 호출만
                   handleReceiveGLB();
                 }
                 // 상태 리셋
@@ -974,8 +967,9 @@ export function Unified3DScene({
             } else {
               // 2초 미만 - 진행 중 표시 (1초마다, 중복 방지)
               if (remaining === 1 && grabDuration > 1000) {
-                if (!lastToastTimeRef.current['grabProgress'] || now - lastToastTimeRef.current['grabProgress'] > 1000) {
-                  toast.info(`${transferMode === 'send' ? '전송' : '수신'} 준비 중... (${remaining}초)`);
+                const currentMode = transferModeRef.current;
+                if (!lastToastTimeRef.current['grabProgress'] || now - lastToastTimeRef.current['grabProgress'] > 2000) {
+                  toast.info(`${currentMode === 'send' ? '전송' : '수신'} 준비 중... (${remaining}초)`);
                   lastToastTimeRef.current['grabProgress'] = now;
                 }
               }
@@ -983,11 +977,9 @@ export function Unified3DScene({
           } else {
             // 그랩이 아니거나 손바닥을 펴지 않은 상태
             if (grabStartTimeRef.current !== null) {
-              if (!lastLogTimeRef.current['grabCancel'] || now - lastLogTimeRef.current['grabCancel'] > 2000) {
-                console.log('[Transfer] 그랩 중단됨');
-                lastLogTimeRef.current['grabCancel'] = now;
-              }
-              if (!lastToastTimeRef.current['grabCancel'] || now - lastToastTimeRef.current['grabCancel'] > 2000) {
+              // 로그 제거 - 너무 자주 출력됨
+              // toast만 표시 (더 긴 간격)
+              if (!lastToastTimeRef.current['grabCancel'] || now - lastToastTimeRef.current['grabCancel'] > 3000) {
                 toast.warning('그랩이 해제되었습니다. 다시 시도하세요.');
                 lastToastTimeRef.current['grabCancel'] = now;
               }
@@ -1004,8 +996,9 @@ export function Unified3DScene({
         // GLB 파일 전송 함수
         const handleSendGLB = async () => {
           // 전송 모드가 아니면 호출하지 않음
-          if (transferMode !== 'send') {
-            console.warn('[Transfer] 전송 모드가 아닌데 handleSendGLB가 호출됨');
+          const currentMode = transferModeRef.current;
+          if (currentMode !== 'send') {
+            console.warn('[Transfer] 전송 모드가 아닌데 handleSendGLB가 호출됨, 현재 모드:', currentMode);
             return;
           }
 
@@ -1158,12 +1151,25 @@ export function Unified3DScene({
         // GLB 파일 수신 함수
         const handleReceiveGLB = async () => {
           // 수신 모드가 아니면 호출하지 않음
-          if (transferMode !== 'receive') {
-            console.warn('[Transfer] 수신 모드가 아닌데 handleReceiveGLB가 호출됨');
+          const currentMode = transferModeRef.current;
+          if (currentMode !== 'receive') {
+            console.warn('[Transfer] 수신 모드가 아닌데 handleReceiveGLB가 호출됨, 현재 모드:', currentMode);
+            return;
+          }
+
+          // 이미 수신 중이면 중복 호출 방지
+          if (transferStateRef.current === 'receiving') {
+            console.warn('[Transfer] 이미 수신 중입니다.');
             return;
           }
 
           try {
+            // 수신 상태로 전환
+            transferStateRef.current = 'receiving';
+            if (onTransferStateChange) {
+              onTransferStateChange('receiving');
+            }
+
             console.log('[Transfer] 수신 시작 - 최신 파일 ID 확인 중...');
             // 최신 파일 ID 확인
             const latestFileId = await transferApi.getLatestFileId();
@@ -1255,11 +1261,20 @@ export function Unified3DScene({
 
         // Start processing video
         console.log('[Hand Gesture] Starting camera processing...');
+        let isCleanedUp = false;
         const camera = new Camera(video, {
           onFrame: async () => {
+            // cleanup이 실행되었거나 hands가 닫혔으면 처리하지 않음
+            if (isCleanedUp || !handsRef.current) {
+              return;
+            }
             try {
               await hands.send({ image: video });
             } catch (error) {
+              // cleanup 후 에러는 무시
+              if (isCleanedUp) {
+                return;
+              }
               console.error('[Hand Gesture] Error sending frame to Hands:', error);
             }
           },
@@ -1273,6 +1288,8 @@ export function Unified3DScene({
         console.log('[Hand Gesture] MediaPipe setup complete!');
 
         cleanup = () => {
+          isCleanedUp = true;
+          // 카메라를 먼저 중지하여 onFrame 콜백이 더 이상 호출되지 않도록 함
           camera.stop();
           if (video.srcObject) {
             const tracks = (video.srcObject as MediaStream).getTracks();
@@ -1282,7 +1299,14 @@ export function Unified3DScene({
             video.parentNode.removeChild(video);
           }
           gestureControllerRef.current?.reset();
-          hands.close();
+          // hands를 닫기 전에 ref를 null로 설정
+          handsRef.current = null;
+          try {
+            hands.close();
+          } catch (error) {
+            // 이미 닫혔을 수 있으므로 에러 무시
+            console.warn('[Hand Gesture] Error closing hands (may already be closed):', error);
+          }
         };
       } catch (error) {
         console.error('[Hand Gesture] Failed to initialize MediaPipe Hands:', error);

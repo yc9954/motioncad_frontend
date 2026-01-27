@@ -85,8 +85,11 @@ export default defineConfig({
         target: 'https://f76640308ac2.ngrok-free.app',
         changeOrigin: true,
         secure: false,
+        timeout: 60000, // 60초 타임아웃 (대용량 파일 업로드용)
         configure: (proxy, _options) => {
           proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('[Backend Proxy] Request:', req.method, req.url);
+            
             // ngrok-skip-browser-warning 헤더 추가
             proxyReq.setHeader('ngrok-skip-browser-warning', 'true');
             
@@ -94,9 +97,18 @@ export default defineConfig({
             if (req.headers['authorization']) {
               proxyReq.setHeader('Authorization', req.headers['authorization']);
             }
+            
+            // FormData 업로드 시 Content-Type을 자동으로 설정하도록 함
+            // (multipart/form-data는 boundary가 포함되어야 하므로 자동 설정에 맡김)
+            if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+              // boundary는 자동으로 설정되므로 그대로 전달
+              console.log('[Backend Proxy] FormData upload detected');
+            }
           });
           
           proxy.on('proxyRes', (proxyRes, req, res) => {
+            console.log('[Backend Proxy] Response:', proxyRes.statusCode, req.url);
+            
             // CORS 헤더 추가
             proxyRes.headers['Access-Control-Allow-Origin'] = '*';
             proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS';
@@ -105,7 +117,19 @@ export default defineConfig({
           });
           
           proxy.on('error', (err, req, res) => {
-            console.error('[Backend Proxy] Error:', err);
+            console.error('[Backend Proxy] Error:', err.message, err.code);
+            console.error('[Backend Proxy] Request URL:', req.url);
+            if (res && !res.headersSent) {
+              res.writeHead(500, {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+              });
+              res.end(JSON.stringify({ 
+                error: 'Proxy error', 
+                message: err.message,
+                code: err.code 
+              }));
+            }
           });
         },
       },
