@@ -161,6 +161,13 @@ export default function App() {
     setShowDashboard(true);
   };
 
+  const handleShowLogin = () => {
+    console.log('handleShowLogin called');
+    setShowLogin(true);
+    setShowLanding(false);
+    setShowDashboard(false);
+  };
+
   const handleGetStartedWithLogin = () => {
     // 개발 단계: 로그인 없이 바로 대시보드로 이동
     // if (!isAuthenticated) {
@@ -195,11 +202,6 @@ export default function App() {
       </>
     );
   }
-
-  const handleShowLogin = () => {
-    setShowLogin(true);
-    setShowLanding(false);
-  };
 
   // Show landing page
   if (showLanding) {

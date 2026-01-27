@@ -51,6 +51,21 @@ const Gallery4 = ({
     };
   }, [carouselApi]);
 
+  // 자동 슬라이드 (무한 루프)
+  useEffect(() => {
+    if (!carouselApi) {
+      return;
+    }
+
+    const autoplayInterval = setInterval(() => {
+      carouselApi.scrollNext();
+    }, 3000); // 3초마다 다음 슬라이드로 이동
+
+    return () => {
+      clearInterval(autoplayInterval);
+    };
+  }, [carouselApi]);
+
   return (
     <section className="pt-6 pb-2">
       <div className="container mx-auto px-6">
@@ -91,6 +106,8 @@ const Gallery4 = ({
         <Carousel
           setApi={setCarouselApi}
           opts={{
+            loop: true, // 무한 루프 활성화
+            align: "start",
             breakpoints: {
               "(max-width: 768px)": {
                 dragFree: true,
@@ -131,16 +148,20 @@ const Gallery4 = ({
           </CarouselContent>
         </Carousel>
         <div className="mt-4 flex justify-center gap-2">
-          {items.map((_, index) => (
-            <button
-              key={index}
-              className={`h-2 w-2 rounded-full transition-colors ${
-                currentSlide === index ? "bg-primary" : "bg-primary/20"
-              }`}
-              onClick={() => carouselApi?.scrollTo(index)}
-              aria-label={`Go to slide ${index + 1}`}
-            />
-          ))}
+          {items.map((_, index) => {
+            // 무한 루프를 위해 현재 슬라이드 인덱스를 items 길이로 나눈 나머지 사용
+            const normalizedIndex = currentSlide % items.length;
+            return (
+              <button
+                key={index}
+                className={`h-2 w-2 rounded-full transition-colors ${
+                  normalizedIndex === index ? "bg-primary" : "bg-primary/20"
+                }`}
+                onClick={() => carouselApi?.scrollTo(index)}
+                aria-label={`Go to slide ${index + 1}`}
+              />
+            );
+          })}
         </div>
       </div>
     </section>

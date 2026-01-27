@@ -9,14 +9,17 @@ import {
   Loader2, Sparkles, XCircle, Download, Plus, Image as ImageIcon,
   Grid3x3, Upload, X, Trash2, Copy, Eye, EyeOff, Lock, Unlock,
   Move, RotateCcw, Maximize2, Layers, FolderPlus, Save, FileDown,
-  ChevronDown, ChevronRight, GripVertical, Camera
+  ChevronDown, ChevronRight, GripVertical, Camera, Search
 } from "lucide-react";
 import { toast } from "sonner";
 import { generate3DModel, checkTaskStatus } from "@/lib/tripo-api";
 import { ModelViewer } from "@/app/components/model-viewer";
 import { Unified3DScene } from "@/app/components/unified-3d-scene";
 import { TravelCard } from "@/app/components/ui/travel-card";
+import { Dialog, DialogContent, DialogOverlay } from "@/app/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/app/components/ui/tabs";
 import { projectApi, assetApi, ComponentRequest, ProjectRequest } from "@/lib/api";
+// import LiquidGlass from "liquid-glass-react";
 
 // 씬 모델 타입 정의
 interface SceneModel {
@@ -91,6 +94,8 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [dioramaName, setDioramaName] = useState("새 디오라마");
   const [savedDioramas, setSavedDioramas] = useState<Diorama[]>([]);
   const [webcamEnabled, setWebcamEnabled] = useState(false);
+  const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // 첫 번째 선택된 모델 (단일 선택용)
   const selectedModelId = selectedModelIds.length === 1 ? selectedModelIds[0] : null;
@@ -1736,7 +1741,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         <div className="flex-1 overflow-y-auto">
           <div className="p-4 border-b">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold">씬 오브젝트 ({sceneModels.length})</h3>
+              <h3 className="text-sm font-semibold">배경 파츠 ({sceneModels.length})</h3>
               <div className="flex gap-1">
                 <Button
                   size="sm"
@@ -2042,8 +2047,13 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           {/* 추천 에셋 */}
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold">추천 에셋</h3>
-              <Button variant="ghost" size="sm" className="h-6 px-2">
+              <h3 className="text-sm font-semibold">부품 파츠</h3>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 px-2"
+                onClick={() => setIsSearchDialogOpen(true)}
+              >
                 <Grid3x3 className="h-3 w-3" />
               </Button>
             </div>
@@ -2099,6 +2109,201 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           </div>
         </div>
       </div>
+
+      {/* 검색 팝업 */}
+      <Dialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen}>
+        <DialogContent 
+            className="max-w-[95vw] w-[95vw] max-h-[85vh] overflow-y-auto p-0 border-0 shadow-2xl bg-transparent"
+            overlayClassName="bg-black/5 backdrop-blur-sm"
+          >
+            <div 
+              className="p-6 space-y-6 relative rounded-3xl overflow-hidden"
+              style={{
+                boxShadow: "0 6px 6px rgba(0, 0, 0, 0.2), 0 0 20px rgba(0, 0, 0, 0.1)",
+              }}
+            >
+              {/* Glass Layer 1: Backdrop blur */}
+              <div
+                className="absolute inset-0 z-0 overflow-hidden rounded-3xl"
+                style={{
+                  backdropFilter: "blur(20px)",
+                  WebkitBackdropFilter: "blur(20px)",
+                  isolation: "isolate",
+                }}
+              />
+              
+              {/* Glass Layer 2: White overlay */}
+              <div
+                className="absolute inset-0 z-10 rounded-3xl"
+                style={{ background: "rgba(255, 255, 255, 0.15)" }}
+              />
+              
+              {/* Glass Layer 3: Inset highlights */}
+              <div
+                className="absolute inset-0 z-20 rounded-3xl overflow-hidden pointer-events-none"
+                style={{
+                  boxShadow:
+                    "inset 2px 2px 1px 0 rgba(255, 255, 255, 0.5), inset -1px -1px 1px 1px rgba(255, 255, 255, 0.5)",
+                }}
+              />
+              
+              {/* Content */}
+              <div className="relative z-30">
+            {/* 검색 바 */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+              <Input
+                placeholder="Search components, screens, themes..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 h-12 text-base border-white/20 bg-white/5"
+                autoFocus
+              />
+            </div>
+
+            {/* 필터 탭 */}
+            <Tabs defaultValue="components" className="w-full">
+              <TabsList 
+                className="w-full justify-start h-auto p-1 border-white/30 rounded-xl"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.15)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                  boxShadow: 'inset 1px 1px 1px 0 rgba(255, 255, 255, 0.3), inset -1px -1px 1px 0 rgba(255, 255, 255, 0.2)',
+                }}
+              >
+                <TabsTrigger value="components">Components</TabsTrigger>
+                <TabsTrigger value="featured">Featured</TabsTrigger>
+                <TabsTrigger value="newest">Newest</TabsTrigger>
+                <TabsTrigger value="bookmarks">Bookmarks</TabsTrigger>
+              </TabsList>
+
+              {/* 네비게이션 옵션 */}
+              <div className="flex gap-4 mt-4 text-sm text-muted-foreground">
+                <button className="hover:text-foreground transition-colors">Screens</button>
+                <button className="hover:text-foreground transition-colors">Recent projects</button>
+                <button className="hover:text-foreground transition-colors">Themes</button>
+              </div>
+
+              {/* 아이콘 그리드 */}
+              <div className="grid grid-cols-6 gap-4 mt-6">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div
+                    key={i}
+                    className="aspect-square rounded-xl border border-white/30 transition-all cursor-pointer flex items-center justify-center hover:scale-105 overflow-hidden"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.15)',
+                      backdropFilter: 'blur(10px)',
+                      WebkitBackdropFilter: 'blur(10px)',
+                      boxShadow: 'inset 1px 1px 1px 0 rgba(255, 255, 255, 0.3), inset -1px -1px 1px 0 rgba(255, 255, 255, 0.2)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                    }}
+                  >
+                    <div className="text-2xl">🎨</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Featured 섹션 */}
+              <TabsContent value="components" className="mt-6">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Featured</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                      { title: "Heroes", description: "Build faster with beautiful compone" },
+                      { title: "Backgrounds", description: "Background lights" },
+                      { title: "Features", description: "Feature components" },
+                      { title: "Announcements", description: "Announcement components" },
+                    ].map((item, index) => (
+                      <Card 
+                        key={index} 
+                        className="p-4 transition-all cursor-pointer border-white/30 rounded-xl hover:scale-[1.02] overflow-hidden"
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.15)',
+                          backdropFilter: 'blur(10px)',
+                          WebkitBackdropFilter: 'blur(10px)',
+                          boxShadow: 'inset 1px 1px 1px 0 rgba(255, 255, 255, 0.3), inset -1px -1px 1px 0 rgba(255, 255, 255, 0.2)',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                        }}
+                      >
+                        <h4 className="font-semibold mb-2">{item.title}</h4>
+                        <p className="text-sm text-muted-foreground">{item.description}</p>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="featured" className="mt-6">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Featured Components</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                      { title: "Heroes", description: "Build faster with beautiful compone" },
+                      { title: "Backgrounds", description: "Background lights" },
+                      { title: "Features", description: "Feature components" },
+                    ].map((item, index) => (
+                      <Card 
+                        key={index} 
+                        className="p-4 transition-all cursor-pointer border-white/30 rounded-xl hover:scale-[1.02] overflow-hidden"
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.15)',
+                          backdropFilter: 'blur(10px)',
+                          WebkitBackdropFilter: 'blur(10px)',
+                          boxShadow: 'inset 1px 1px 1px 0 rgba(255, 255, 255, 0.3), inset -1px -1px 1px 0 rgba(255, 255, 255, 0.2)',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                        }}
+                      >
+                        <h4 className="font-semibold mb-2">{item.title}</h4>
+                        <p className="text-sm text-muted-foreground">{item.description}</p>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="newest" className="mt-6">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Newest Components</h3>
+                  <p className="text-sm text-muted-foreground">최신 컴포넌트가 여기에 표시됩니다.</p>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="bookmarks" className="mt-6">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Bookmarks</h3>
+                  <p className="text-sm text-muted-foreground">북마크한 컴포넌트가 여기에 표시됩니다.</p>
+                </div>
+              </TabsContent>
+            </Tabs>
+
+            {/* 하단 링크 */}
+            <div 
+              className="flex gap-4 pt-4 text-sm text-muted-foreground"
+              style={{ borderTop: '1px solid rgba(255, 255, 255, 0.3)' }}
+            >
+              <a href="#" className="hover:text-foreground transition-colors">Contact support</a>
+              <a href="#" className="hover:text-foreground transition-colors">Share feedback</a>
+            </div>
+              </div>
+            </div>
+          </DialogContent>
+      </Dialog>
     </div>
   );
 }
