@@ -22,6 +22,13 @@ export interface TokenResponse {
   tokenType: string;
 }
 
+export interface UserUpdateRequest {
+  nickname?: string;
+  region?: string;
+  job?: string;
+  description?: string;
+}
+
 export interface UserSettings {
   handSensitivity?: number;
   cameraResolution?: string;
@@ -33,6 +40,9 @@ export interface UserResponse {
   id: number;
   email: string;
   nickname: string;
+  region?: string;
+  job?: string;
+  description?: string;
   userSettings?: UserSettings;
   createdAt: string;
   updatedAt: string;
@@ -282,6 +292,13 @@ export const authApi = {
 export const userApi = {
   getProfile: async (userId: number): Promise<UserResponse> => {
     return apiCall<UserResponse>(`/api/users/${userId}`);
+  },
+
+  updateProfile: async (userId: number, data: UserUpdateRequest): Promise<void> => {
+    await apiCall(`/api/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   },
 
   updateSettings: async (userId: number, settings: UserSettings): Promise<void> => {

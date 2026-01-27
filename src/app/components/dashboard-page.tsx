@@ -30,7 +30,7 @@ import { PromptingTab } from "@/app/components/prompting-tab"
 import { TravelCard } from "@/app/components/ui/travel-card"
 import { ProfileCard } from "@/app/components/ui/profile-card"
 import { Gallery4, Gallery4Props } from "@/components/blocks/gallery4"
-import { projectApi, ProjectResponse, authApi } from "@/lib/api"
+import { projectApi, ProjectResponse, authApi, userApi, UserResponse, UserUpdateRequest } from "@/lib/api"
 import { toast } from "sonner"
 import { Button } from "@/app/components/ui/button"
 
@@ -153,7 +153,9 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
   }));
 
   const [projects, setProjects] = useState<ProjectResponse[]>(initialMockProjects);
+  const [user, setUser] = useState<UserResponse | null>(null);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [isLoadingUser, setIsLoadingUser] = useState(false);
   const [projectThumbnails, setProjectThumbnails] = useState<Record<number, string>>({});
   const [selectedProject, setSelectedProject] = useState<{ glbUrl: string; name: string } | null>(null);
 
@@ -165,6 +167,44 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
     });
     setActiveTab("prompting");
     toast.info(`${project.title} 프로젝트가 선택되었습니다.`);
+  };
+
+  // 유저 정보 가져오기
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      const savedUserId = localStorage.getItem('userId');
+      if (!savedUserId) return;
+
+      setIsLoadingUser(true);
+      try {
+        const userData = await userApi.getProfile(parseInt(savedUserId, 10));
+        setUser(userData);
+      } catch (error) {
+        console.error('유저 프로필 로드 실패:', error);
+      } finally {
+        setIsLoadingUser(false);
+      }
+    };
+
+    loadUserProfile();
+  }, []);
+
+  const handleUpdateProfile = async (data: UserUpdateRequest) => {
+    const savedUserId = localStorage.getItem('userId');
+    if (!savedUserId) return;
+
+    try {
+      await userApi.updateProfile(parseInt(savedUserId, 10), data);
+      toast.success("프로필이 성공적으로 업데이트되었습니다.");
+
+      // Refresh user profile
+      const updatedUserData = await userApi.getProfile(parseInt(savedUserId, 10));
+      setUser(updatedUserData);
+    } catch (error) {
+      console.error('프로필 업데이트 실패:', error);
+      toast.error("프로필 업데이트에 실패했습니다.");
+      throw error;
+    }
   };
 
   // 백엔드에서 프로젝트 목록 가져오기 (백그라운드에서 시도)
@@ -625,7 +665,16 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
           initialModelName={selectedProject?.name}
         />;
       case "profile":
-        return <ProfileCard />;
+        return <ProfileCard
+          name={user?.nickname}
+          email={user?.email}
+          joinDate={user?.createdAt ? new Date(user.createdAt).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' }) : undefined}
+          role={user?.job}
+          location={user?.region}
+          bio={user?.description}
+          isLoading={isLoadingUser}
+          onUpdateProfile={handleUpdateProfile}
+        />;
       default:
         return null;
     }
@@ -666,10 +715,12 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
           <SidebarGroup>
             <SidebarMenuButton className="w-full justify-between gap-3 h-12">
               <div className="flex items-center gap-2">
-                <User className="h-5 w-5 rounded-md flex-shrink-0" />
-                <div className="flex flex-col items-start">
-                  <span className="text-sm font-medium">John Doe</span>
-                  <span className="text-xs text-muted-foreground">john@example.com</span>
+                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 overflow-hidden">
+                  <User className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex flex-col items-start overflow-hidden">
+                  <span className="text-sm font-medium truncate w-full">{user?.nickname || 'Loading...'}</span>
+                  <span className="text-xs text-muted-foreground truncate w-full">{user?.email || 'please wait'}</span>
                 </div>
               </div>
               <ChevronsUpDown className="h-5 w-5 rounded-md flex-shrink-0" />
