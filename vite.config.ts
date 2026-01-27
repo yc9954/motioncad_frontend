@@ -27,7 +27,7 @@ export default defineConfig({
           proxy.on('proxyReq', (proxyReq, req, res) => {
             console.log('[Proxy] Request:', req.method, req.url);
             console.log('[Proxy] Headers:', JSON.stringify(req.headers, null, 2));
-            
+
             // 클라이언트에서 보낸 Authorization 헤더가 있으면 그대로 사용
             // 없으면 환경 변수에서 읽어서 추가 (백업)
             if (!req.headers['authorization']) {
@@ -55,15 +55,15 @@ export default defineConfig({
               console.log('[Proxy] Using Authorization header from client request');
             }
           });
-          
+
           proxy.on('proxyRes', (proxyRes, req, res) => {
             console.log('[Proxy] Response:', proxyRes.statusCode, req.url);
-            
+
             // CORS 헤더를 응답에 추가
             proxyRes.headers['Access-Control-Allow-Origin'] = '*';
             proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
             proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization';
-            
+
             // 리다이렉트 처리 (301, 302, 307, 308)
             if ([301, 302, 307, 308].includes(proxyRes.statusCode || 0)) {
               const location = proxyRes.headers['location'];
@@ -74,7 +74,7 @@ export default defineConfig({
               }
             }
           });
-          
+
           proxy.on('error', (err, req, res) => {
             console.error('[Proxy] Error:', err);
           });
@@ -89,13 +89,13 @@ export default defineConfig({
           proxy.on('proxyReq', (proxyReq, req, res) => {
             // ngrok-skip-browser-warning 헤더 추가
             proxyReq.setHeader('ngrok-skip-browser-warning', 'true');
-            
+
             // 클라이언트에서 보낸 헤더 전달
             if (req.headers['authorization']) {
               proxyReq.setHeader('Authorization', req.headers['authorization']);
             }
           });
-          
+
           proxy.on('proxyRes', (proxyRes, req, res) => {
             // CORS 헤더 추가
             proxyRes.headers['Access-Control-Allow-Origin'] = '*';
@@ -103,11 +103,18 @@ export default defineConfig({
             proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, ngrok-skip-browser-warning';
             proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
           });
-          
+
           proxy.on('error', (err, req, res) => {
             console.error('[Backend Proxy] Error:', err);
           });
         },
+      },
+      // S3 버킷 프록시 (CORS 문제 해결용)
+      '/s3-proxy': {
+        target: 'https://madcampw3withyc1.s3.ap-northeast-2.amazonaws.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/s3-proxy/, ''),
+        secure: true,
       },
     },
   },

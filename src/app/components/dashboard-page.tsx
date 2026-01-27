@@ -17,7 +17,6 @@ import {
 
 import {
   User,
-  ChevronsUpDown,
   Home,
   Sparkles,
   Settings,
@@ -172,12 +171,9 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
   // 유저 정보 가져오기
   useEffect(() => {
     const loadUserProfile = async () => {
-      const savedUserId = localStorage.getItem('userId');
-      if (!savedUserId) return;
-
       setIsLoadingUser(true);
       try {
-        const userData = await userApi.getProfile(parseInt(savedUserId, 10));
+        const userData = await userApi.getMe();
         setUser(userData);
       } catch (error) {
         console.error('유저 프로필 로드 실패:', error);
@@ -190,15 +186,14 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
   }, []);
 
   const handleUpdateProfile = async (data: UserUpdateRequest) => {
-    const savedUserId = localStorage.getItem('userId');
-    if (!savedUserId) return;
+    if (!user?.id) return;
 
     try {
-      await userApi.updateProfile(parseInt(savedUserId, 10), data);
+      await userApi.updateProfile(user.id, data);
       toast.success("프로필이 성공적으로 업데이트되었습니다.");
 
       // Refresh user profile
-      const updatedUserData = await userApi.getProfile(parseInt(savedUserId, 10));
+      const updatedUserData = await userApi.getMe();
       setUser(updatedUserData);
     } catch (error) {
       console.error('프로필 업데이트 실패:', error);
@@ -671,9 +666,14 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
           joinDate={user?.createdAt ? new Date(user.createdAt).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' }) : undefined}
           role={user?.job}
           location={user?.region}
-          description={user?.description}
+          description={user?.userDescription}
           isLoading={isLoadingUser}
           onUpdateProfile={handleUpdateProfile}
+          stats={{
+            projects: user?.totalProjects,
+            likes: user?.totalLikes,
+            views: user?.totalViews
+          }}
         />;
       default:
         return null;
@@ -713,7 +713,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
 
         <SidebarFooter>
           <SidebarGroup>
-            <SidebarMenuButton className="w-full justify-between gap-3 h-12">
+            <SidebarMenuButton className="w-full justify-start gap-3 h-12">
               <div className="flex items-center gap-2">
                 <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 overflow-hidden">
                   <User className="h-5 w-5 text-primary" />
@@ -723,7 +723,6 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
                   <span className="text-xs text-muted-foreground truncate w-full">{user?.email || 'please wait'}</span>
                 </div>
               </div>
-              <ChevronsUpDown className="h-5 w-5 rounded-md flex-shrink-0" />
             </SidebarMenuButton>
             {onNavigateToLanding && (
               <Button

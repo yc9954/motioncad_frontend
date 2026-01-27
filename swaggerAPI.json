@@ -16,6 +16,10 @@
             "description": "User management APIs"
         },
         {
+            "name": "Transfer",
+            "description": "GLB file transfer APIs for motion gesture control"
+        },
+        {
             "name": "Project",
             "description": "Project management APIs"
         },
@@ -29,6 +33,56 @@
         }
     ],
     "paths": {
+        "/api/transfer/upload": {
+            "post": {
+                "tags": [
+                    "Transfer"
+                ],
+                "summary": "Upload GLB File",
+                "description": "Uploads a GLB file to the transfer service. Optionally accepts a sessionId for session-based file management.",
+                "operationId": "uploadGlbFile",
+                "parameters": [
+                    {
+                        "name": "sessionId",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "required": [
+                                    "glbFile"
+                                ],
+                                "type": "object",
+                                "properties": {
+                                    "glbFile": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UploadResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/projects": {
             "get": {
                 "tags": [
@@ -249,6 +303,16 @@
                         "schema": {
                             "type": "boolean"
                         }
+                    },
+                    {
+                        "name": "count",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 20
+                        }
                     }
                 ],
                 "responses": {
@@ -453,6 +517,73 @@
                 }
             }
         },
+        "/api/users/{userId}": {
+            "get": {
+                "tags": [
+                    "User"
+                ],
+                "summary": "Get User Profile",
+                "description": "Fetches basic profile information including nickname and settings.",
+                "operationId": "getUserProfile",
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserResponseDTO"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "User"
+                ],
+                "summary": "Update User Profile",
+                "description": "Updates user profile information (nickname, region, job, description)",
+                "operationId": "updateProfile",
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UserUpdateRequestDTO"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/api/users/{userId}/settings": {
             "patch": {
                 "tags": [
@@ -489,35 +620,49 @@
                 }
             }
         },
-        "/api/users/{userId}": {
+        "/api/transfer/latest": {
             "get": {
                 "tags": [
-                    "User"
+                    "Transfer"
                 ],
-                "summary": "Get User Profile",
-                "description": "Fetches basic profile information including nickname and settings.",
-                "operationId": "getUserProfile",
-                "parameters": [
-                    {
-                        "name": "userId",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "integer",
-                            "format": "int64"
-                        }
-                    }
-                ],
+                "summary": "Get Latest File",
+                "description": "Returns the fileId of the most recently uploaded GLB file.",
+                "operationId": "getLatestFile",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "content": {
                             "*/*": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/UserResponseDTO"
+                                    "$ref": "#/components/schemas/LatestFileResponse"
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/api/transfer/download/{fileId}": {
+            "get": {
+                "tags": [
+                    "Transfer"
+                ],
+                "summary": "Download GLB File",
+                "description": "Redirects to the presigned S3 URL for downloading the GLB file by fileId.",
+                "operationId": "downloadGlbFile",
+                "parameters": [
+                    {
+                        "name": "fileId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
                     }
                 }
             }
@@ -555,6 +700,39 @@
                 }
             }
         },
+        "/api/parts/{partId}": {
+            "get": {
+                "tags": [
+                    "Part"
+                ],
+                "summary": "Get Part by ID",
+                "description": "Fetches a single part by its ID.",
+                "operationId": "getPart",
+                "parameters": [
+                    {
+                        "name": "partId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PartResponseDTO"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/health": {
             "get": {
                 "tags": [
@@ -581,6 +759,17 @@
     },
     "components": {
         "schemas": {
+            "UploadResponse": {
+                "type": "object",
+                "properties": {
+                    "fileId": {
+                        "type": "string"
+                    },
+                    "url": {
+                        "type": "string"
+                    }
+                }
+            },
             "ComponentRequestDTO": {
                 "required": [
                     "partId"
@@ -704,6 +893,25 @@
                     }
                 }
             },
+            "UserUpdateRequestDTO": {
+                "type": "object",
+                "properties": {
+                    "nickname": {
+                        "maxLength": 20,
+                        "minLength": 2,
+                        "type": "string"
+                    },
+                    "region": {
+                        "type": "string"
+                    },
+                    "job": {
+                        "type": "string"
+                    },
+                    "userDescription": {
+                        "type": "string"
+                    }
+                }
+            },
             "UserSettings": {
                 "type": "object",
                 "properties": {
@@ -738,6 +946,27 @@
                     "userSettings": {
                         "$ref": "#/components/schemas/UserSettings"
                     },
+                    "totalProjects": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "totalLikes": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "totalViews": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "region": {
+                        "type": "string"
+                    },
+                    "job": {
+                        "type": "string"
+                    },
+                    "userDescription": {
+                        "type": "string"
+                    },
                     "createdAt": {
                         "type": "string",
                         "format": "date-time"
@@ -745,6 +974,14 @@
                     "updatedAt": {
                         "type": "string",
                         "format": "date-time"
+                    }
+                }
+            },
+            "LatestFileResponse": {
+                "type": "object",
+                "properties": {
+                    "fileId": {
+                        "type": "string"
                     }
                 }
             },

@@ -125,6 +125,9 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [searchQuery, setSearchQuery] = useState("");
   const [libraryParts, setLibraryParts] = useState<PartResponse[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+  const [sortBy, setSortBy] = useState<'latest' | 'name'>('latest');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 9; // 한 행에 3개씩 3행 (총 9개)
 
   // 라이브러리 파츠 가져오기
   const fetchLibraryParts = useCallback(async () => {
@@ -132,7 +135,31 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     try {
       // 모든 OBJECT 타입 파츠 가져오기
       const parts = await partApi.getParts({ type: 'OBJECT' });
-      setLibraryParts(parts);
+
+      // URL 정규화: ngrok 또는 S3 전체 URL인 경우 상대 경로(프록시)로 변경
+      const normalizedParts = parts.map(part => {
+        let modelFileUrl = part.modelFileUrl;
+        if (!modelFileUrl) return part;
+
+        // 1. ngrok URL 처리
+        if (modelFileUrl.includes('ngrok-free.app')) {
+          try {
+            const url = new URL(modelFileUrl);
+            modelFileUrl = url.pathname + url.search;
+          } catch (e) { /* ignore */ }
+        }
+        // 2. S3 URL 처리 (프록시 /s3-proxy 사용)
+        else if (modelFileUrl.includes('madcampw3withyc1.s3.ap-northeast-2.amazonaws.com')) {
+          try {
+            const url = new URL(modelFileUrl);
+            modelFileUrl = `/s3-proxy${url.pathname}${url.search}`;
+          } catch (e) { /* ignore */ }
+        }
+
+        return { ...part, modelFileUrl };
+      });
+
+      setLibraryParts(normalizedParts);
     } catch (err) {
       console.error("Failed to fetch library parts:", err);
       toast.error("라이브러리 파츠를 불러오는데 실패했습니다.");
@@ -147,6 +174,34 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       fetchLibraryParts();
     }
   }, [isSearchDialogOpen, fetchLibraryParts]);
+
+  // 필터링, 정렬, 페이지네이션 로직
+  const filteredAndSortedParts = React.useMemo(() => {
+    let result = libraryParts.filter(part =>
+      part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      part.category?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    if (sortBy === 'name') {
+      result.sort((a, b) => a.name.localeCompare(b.name));
+    } else {
+      // 최신순 (id가 클수록 최신이라고 가정하거나 createdAt 필드가 있다면 사용)
+      result.sort((a, b) => b.id - a.id);
+    }
+
+    return result;
+  }, [libraryParts, searchQuery, sortBy]);
+
+  const totalPages = Math.ceil(filteredAndSortedParts.length / itemsPerPage);
+  const paginatedParts = filteredAndSortedParts.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  // 검색어나 정렬 기준 변경 시 페이지 초기화
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, sortBy]);
 
   // 파츠 업로드 다이얼로그 관련 상태
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
@@ -240,7 +295,11 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       const file = new File([blob], 'model.glb', { type: 'model/gltf-binary' });
 
       // 썸네일 생성
-      return await generateThumbnailFromGLB(file);
+      const thumbnailFile = await generateThumbnailFromGLB(file);
+      if (!thumbnailFile) return null;
+
+      // File 객체를 URL로 변환하여 반환
+      return URL.createObjectURL(thumbnailFile);
     } catch (error) {
       console.error(`Error generating thumbnail from URL ${glbUrl}:`, error);
       return null;
@@ -984,169 +1043,6 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     }
   };
 
-  // 파일 업로드 핸들러
-  // GLB 파일에서 썸네일 생성 함수
-  const generateThumbnailFromGLB = async (file: File): Promise<string | null> => {
-    try {
-      // Three.js와 GLTFLoader 로드
-      if (!(window as any).THREE) {
-        const threeScript = document.createElement('script');
-        threeScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-        await new Promise((resolve, reject) => {
-          threeScript.onload = () => resolve(undefined);
-          threeScript.onerror = () => reject(new Error('Three.js 로드 실패'));
-          document.head.appendChild(threeScript);
-        });
-      }
-
-      const THREE = (window as any).THREE;
-      if (!THREE) {
-        console.error('Three.js가 로드되지 않았습니다.');
-        return null;
-      }
-
-      // GLTFLoader 확인
-      let GLTFLoader = THREE.GLTFLoader;
-      if (!GLTFLoader) {
-        const gltfLoaderScript = document.createElement('script');
-        gltfLoaderScript.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js';
-        await new Promise((resolve, reject) => {
-          gltfLoaderScript.onload = () => resolve(undefined);
-          gltfLoaderScript.onerror = () => reject(new Error('GLTFLoader 로드 실패'));
-          document.head.appendChild(gltfLoaderScript);
-        });
-        GLTFLoader = THREE.GLTFLoader;
-      }
-
-      // 오프스크린 렌더러 생성
-      const width = 256; // 512에서 256으로 축소
-      const height = 256;
-      const pixelRatio = 1; // 픽셀 배율 고정 (성능 최적화)
-      const renderer = new THREE.WebGLRenderer({
-        antialias: false, // 안티앨리어싱 비활성화 (속도 우선)
-        alpha: true,
-        preserveDrawingBuffer: true,
-        powerPreference: "high-performance",
-      });
-      renderer.setSize(width, height, false);
-      renderer.setPixelRatio(pixelRatio);
-      renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      renderer.outputEncoding = THREE.sRGBEncoding;
-
-      // 씬 생성
-      const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0xfafafa);
-
-      // 카메라 설정
-      const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
-      camera.position.set(3, 3, 3);
-      camera.lookAt(0, 0, 0);
-
-      // 조명 설정
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-      scene.add(ambientLight);
-
-      const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1);
-      directionalLight1.position.set(5, 10, 5);
-      directionalLight1.castShadow = true;
-      scene.add(directionalLight1);
-
-      const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
-      directionalLight2.position.set(-5, 5, -5);
-      scene.add(directionalLight2);
-
-      // 파일 URL 생성
-      const fileUrl = URL.createObjectURL(file);
-
-      // 모델 로드
-      const loader = new GLTFLoader();
-
-      return new Promise((resolve) => {
-        loader.load(
-          fileUrl,
-          (gltf: any) => {
-            try {
-              const model = gltf.scene.clone();
-
-              // 모델 바운딩 박스 계산
-              const box = new THREE.Box3().setFromObject(model);
-
-              if (box.isEmpty()) {
-                throw new Error('모델이 비어있습니다.');
-              }
-
-              const center = box.getCenter(new THREE.Vector3());
-              const size = box.getSize(new THREE.Vector3());
-              const maxDim = Math.max(size.x, size.y, size.z);
-
-              if (maxDim === 0) {
-                throw new Error('모델 크기가 0입니다.');
-              }
-
-              const scale = 1.5 / maxDim;
-
-              // 모델 중앙 정렬 및 스케일 조정
-              model.position.sub(center);
-              model.scale.multiplyScalar(scale);
-
-              // 모델에 그림자 적용
-              model.traverse((child: any) => {
-                if (child.isMesh) {
-                  child.castShadow = true;
-                  child.receiveShadow = true;
-                }
-              });
-
-              scene.add(model);
-
-              // 렌더링
-              renderer.render(scene, camera);
-
-              // 이미지로 변환 (JPEG 0.7 품질로 압축률 향상)
-              const dataURL = renderer.domElement.toDataURL('image/jpeg', 0.7);
-
-              // 정리
-              URL.revokeObjectURL(fileUrl);
-              renderer.dispose();
-              scene.traverse((object: any) => {
-                if (object.geometry) object.geometry.dispose();
-                if (object.material) {
-                  if (Array.isArray(object.material)) {
-                    object.material.forEach((mat: any) => {
-                      if (mat.map) mat.map.dispose();
-                      mat.dispose();
-                    });
-                  } else {
-                    if (object.material.map) object.material.map.dispose();
-                    object.material.dispose();
-                  }
-                }
-              });
-
-              resolve(dataURL);
-            } catch (error) {
-              console.error('Thumbnail generation error:', error);
-              URL.revokeObjectURL(fileUrl);
-              renderer.dispose();
-              resolve(null);
-            }
-          },
-          undefined,
-          (error: Error) => {
-            console.error('GLB load error:', error);
-            URL.revokeObjectURL(fileUrl);
-            renderer.dispose();
-            resolve(null);
-          }
-        );
-      });
-    } catch (error) {
-      console.error('Thumbnail generation setup error:', error);
-      return null;
-    }
-  };
-
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
@@ -1201,10 +1097,13 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
         // 썸네일은 백그라운드에서 생성
         if (fileExtension === ".glb") {
-          generateThumbnailFromGLB(file).then(thumbnail => {
-            if (thumbnail) {
-              setUploadFileData(prev => prev ? { ...prev, previewUrl: thumbnail } : null);
+          generateThumbnailFromGLB(file).then(thumbnailFile => {
+            if (thumbnailFile) {
+              const url = URL.createObjectURL(thumbnailFile);
+              setUploadFileData(prev => prev ? { ...prev, previewUrl: url } : null);
             }
+          }).catch(err => {
+            console.error("Delayed thumbnail generation failed:", err);
           });
         }
       }
@@ -1216,7 +1115,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     if (!uploadFileData) return;
 
     const uploadId = `upload-${Date.now()}`;
-    const fileId = `file-${Date.now()}-${Math.random()}`; // 로컬 식별용 ID 생성
+    const fileId = `file-${Date.now()}-${Math.random()}`;
 
     // 1. 업로드 큐에 추가할 펜딩 객체
     const newPending: PendingUpload = {
@@ -1230,7 +1129,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       category: uploadFileData.category,
     };
 
-    // 2. [변경] response 기다리지 않고 즉시 목록에 추가 (Pending 상태)
+    // 2. 즉시 목록에 추가 (Pending 상태)
     setUploadedFiles((prev) => [
       ...prev,
       {
@@ -1239,7 +1138,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         previewUrl: uploadFileData.previewUrl,
         type: "model",
         isRegistered: false,
-        isPending: true, // 로컬 전용 플래그
+        isPending: true,
       },
     ]);
 
@@ -1247,7 +1146,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     setPendingUploads(prev => [...prev, newPending]);
     setIsUploadDialogOpen(false);
 
-    const currentUploadData = { ...uploadFileData }; // 캡처
+    const currentUploadData = { ...uploadFileData };
     setUploadFileData(null);
     setUploadProgress(0);
 
@@ -1266,7 +1165,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           currentUploadData.type,
           currentUploadData.category,
           currentUploadData.file,
-          thumbnailFile, // 썸네일 파일 포함
+          thumbnailFile,
           (progress) => {
             setPendingUploads(prev => prev.map(u =>
               u.id === uploadId ? {
@@ -1278,17 +1177,15 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           }
         );
 
-        // 성공 시: 목록 정보 업데이트 및 씬 동기화
+        // 성공 시 업데이트
         setUploadedFiles(prev => prev.map(f =>
           f.id === fileId ? { ...f, partId, isRegistered: true, isPending: false } : f
         ));
 
-        // 씬에 이미 배치된 모델이 있다면 partId 동기화
         setSceneModels(prev => prev.map(m =>
           m.id === fileId ? { ...m, partId } : m
         ));
 
-        // 펜딩 상태 완료 처리 후 3초 뒤에 제거
         setPendingUploads(prev => prev.map(u =>
           u.id === uploadId ? { ...u, progress: 100, status: 'completed' } : u
         ));
@@ -1300,16 +1197,12 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         toast.success(`"${currentUploadData.name}" 등록 완료!`);
       } catch (error) {
         console.error('Background part upload failed:', error);
-
-        // 실패 시: 목록에서 Pending 상태 해제 (필요시 삭제 처리도 가능)
         setUploadedFiles(prev => prev.map(f =>
           f.id === fileId ? { ...f, isPending: false } : f
         ));
-
         setPendingUploads(prev => prev.map(u =>
           u.id === uploadId ? { ...u, status: 'error' } : u
         ));
-
         toast.error(`"${currentUploadData.name}" 등록 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
       }
     })();
@@ -2329,117 +2222,156 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         </div>
       </div>
 
-      {/* 검색 팝업 */}
       <Dialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen}>
         <DialogContent
-          className="max-w-[95vw] w-[95vw] max-h-[85vh] overflow-y-auto p-0 border-0 shadow-2xl bg-transparent"
+          className="max-w-[1200px] w-[95vw] max-h-[90vh] overflow-hidden p-0 border-0 shadow-2xl bg-white rounded-2xl"
         >
           <div
-            className="w-full max-h-[85vh] overflow-y-auto p-6 space-y-6 rounded-2xl border bg-white shadow-lg"
+            className="flex flex-col h-[90vh] space-y-0"
           >
-            {/* 검색 바 */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
-              <Input
-                placeholder="Search components, screens, themes..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 h-12 text-base"
-                autoFocus
-              />
-            </div>
-
-            {/* 부품 목록 그리드 */}
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">
-                  부품 라이브러리 {searchQuery ? `("${searchQuery}" 검색 결과)` : ""}
-                </h3>
-                <Badge variant="secondary" className="px-2 py-0.5 text-xs">
-                  {libraryParts.filter(part =>
-                    part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    part.category?.toLowerCase().includes(searchQuery.toLowerCase())
-                  ).length} 개의 부품
+            {/* 헤더 섹션 */}
+            <div className="p-6 border-b space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold">부품 라이브러리</h2>
+                  <p className="text-sm text-muted-foreground mt-1">프로젝트에 사용할 3D 부품을 검색하고 추가하세요.</p>
+                </div>
+                <Badge variant="secondary" className="px-3 py-1 text-sm font-medium">
+                  {filteredAndSortedParts.length} 개의 부품
                 </Badge>
               </div>
 
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+                  <Input
+                    placeholder="부품 이름 또는 카테고리 검색..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 h-11 text-base rounded-xl border-muted-foreground/20 focus:border-primary shadow-sm"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Select
+                    value={sortBy}
+                    onValueChange={(value: 'latest' | 'name') => setSortBy(value)}
+                  >
+                    <SelectTrigger className="w-[140px] h-11 rounded-xl">
+                      <SelectValue placeholder="정렬 방식" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="latest">최신순</SelectItem>
+                      <SelectItem value="name">이름순</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            {/* 부품 목록 그리드 섹션 */}
+            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
               {isLoadingLibrary ? (
                 <div className="flex-1 flex flex-col items-center justify-center py-20">
                   <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
                   <p className="text-muted-foreground animate-pulse">부품을 불러오는 중...</p>
                 </div>
               ) : (
-                <div className="flex-1 overflow-y-auto pr-2">
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                    {libraryParts
-                      .filter(part =>
-                        part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        part.category?.toLowerCase().includes(searchQuery.toLowerCase())
-                      )
-                      .map((part) => {
-                        const imageUrl = part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {paginatedParts.map((part) => {
+                      const imageUrl = part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
 
-                        return (
-                          <div
-                            key={part.id}
-                            className="group relative"
-                            draggable={true}
-                            onDragStart={(e) => handleDragStart(e, {
-                              partId: part.id,
-                              modelUrl: part.modelFileUrl,
-                              name: part.name,
-                              thumbnail: part.thumbnailUrl,
-                              category: part.category,
-                            })}
-                          >
-                            <TravelCard
-                              imageUrl={imageUrl}
-                              imageAlt={part.name}
-                              title={part.name}
-                              location={part.category || "3D Model"}
-                              overview={part.description || `A 3D ${part.name} model.`}
-                              onBookNow={() => {
-                                if (part.modelFileUrl) {
-                                  const offset = sceneModels.length * 0.5;
-                                  const newModel: SceneModel = {
-                                    id: `library-${part.id}-${Date.now()}`,
-                                    partId: part.id,
-                                    modelUrl: part.modelFileUrl,
-                                    name: part.name,
-                                    position: { x: offset, y: 0, z: offset },
-                                    rotation: { x: 0, y: 0, z: 0 },
-                                    scale: 1,
-                                    visible: true,
-                                    locked: false,
-                                  };
-                                  setSceneModels((prev) => [...prev, newModel]);
-                                  setSelectedModelIds([newModel.id]);
-                                  toast.success(`${part.name}이(가) 씬에 추가되었습니다.`);
-                                }
-                              }}
-                              className="h-[220px]"
-                            />
-                            {/* Hover 시 나타나는 뱃지 */}
-                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                              <Badge className="bg-primary/90 text-[10px] font-bold">
-                                {part.type}
-                              </Badge>
-                            </div>
+                      return (
+                        <div
+                          key={part.id}
+                          className="group relative"
+                          draggable={true}
+                          onDragStart={(e) => handleDragStart(e, {
+                            partId: part.id,
+                            modelUrl: part.modelFileUrl, // fetchLibraryParts에서 이미 정문화됨
+                            name: part.name,
+                            thumbnail: part.thumbnailUrl,
+                            category: part.category,
+                          })}
+                        >
+                          <TravelCard
+                            imageUrl={imageUrl}
+                            imageAlt={part.name}
+                            title={part.name}
+                            location={part.category || "3D Model"}
+                            overview={part.description || `A 3D ${part.name} model.`}
+                            onBookNow={() => {
+                              const modelUrl = part.modelFileUrl;
+                              if (modelUrl) {
+                                const offset = sceneModels.length * 0.5;
+                                const newModel: SceneModel = {
+                                  id: `library-${part.id}-${Date.now()}`,
+                                  partId: part.id,
+                                  modelUrl: modelUrl,
+                                  name: part.name,
+                                  position: { x: offset, y: 0, z: offset },
+                                  rotation: { x: 0, y: 0, z: 0 },
+                                  scale: 1,
+                                  visible: true,
+                                  locked: false,
+                                };
+                                setSceneModels((prev) => [...prev, newModel]);
+                                setSelectedModelIds([newModel.id]);
+                                toast.success(`${part.name}이(가) 씬에 추가되었습니다.`);
+                                // 다이얼로그 닫지 않음 (여러 개 추가 가능하도록)
+                              } else {
+                                toast.error("모델 파일 경로를 찾을 수 없습니다.");
+                                console.error("Part model url is missing:", part);
+                              }
+                            }}
+                            className="h-[280px] transition-all duration-300 group-hover:scale-[1.02] group-hover:shadow-xl"
+                          />
+                          {/* Hover 시 나타나는 뱃지 */}
+                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                            <Badge className="bg-primary/90 text-[10px] font-bold">
+                              {part.type}
+                            </Badge>
                           </div>
-                        );
-                      })}
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  {libraryParts.filter(part =>
-                    part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    part.category?.toLowerCase().includes(searchQuery.toLowerCase())
-                  ).length === 0 && !isLoadingLibrary && (
-                      <div className="text-center py-20 border-2 border-dashed rounded-2xl">
-                        <Search className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-20" />
-                        <h3 className="text-lg font-medium text-muted-foreground">검색 결과가 없습니다</h3>
-                        <p className="text-sm text-muted-foreground mt-1">다른 검색어를 입력해 보세요.</p>
-                      </div>
-                    )}
+                  {filteredAndSortedParts.length === 0 && !isLoadingLibrary && (
+                    <div className="text-center py-20 border-2 border-dashed rounded-2xl bg-white/50">
+                      <Search className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-20" />
+                      <h3 className="text-lg font-medium text-muted-foreground">검색 결과가 없습니다</h3>
+                      <p className="text-sm text-muted-foreground mt-1">다른 검색어를 입력해 보세요.</p>
+                    </div>
+                  )}
+
+                  {/* 페이지네이션 컨트롤 */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-4 mt-8 pb-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        className="rounded-xl px-4"
+                      >
+                        이전
+                      </Button>
+                      <span className="text-sm font-medium">
+                        {currentPage} / {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPage === totalPages}
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        className="rounded-xl px-4"
+                      >
+                        다음
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -26,7 +26,7 @@ export interface UserUpdateRequest {
   nickname?: string;
   region?: string;
   job?: string;
-  description?: string;
+  userDescription?: string;
 }
 
 export interface UserSettings {
@@ -40,9 +40,12 @@ export interface UserResponse {
   id: number;
   email: string;
   nickname: string;
+  totalProjects?: number;
+  totalLikes?: number;
+  totalViews?: number;
   region?: string;
   job?: string;
-  description?: string;
+  userDescription?: string;
   userSettings?: UserSettings;
   createdAt: string;
   updatedAt: string;
@@ -290,6 +293,10 @@ export const authApi = {
 
 // User APIs
 export const userApi = {
+  getMe: async (): Promise<UserResponse> => {
+    return apiCall<UserResponse>('/api/users/me');
+  },
+
   getProfile: async (userId: number): Promise<UserResponse> => {
     return apiCall<UserResponse>(`/api/users/${userId}`);
   },

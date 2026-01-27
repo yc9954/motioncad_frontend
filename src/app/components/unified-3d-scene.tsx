@@ -41,6 +41,7 @@ export function Unified3DScene({
   const controlsRef = useRef<any>(null);
   const transformControlsRef = useRef<any>(null);
   const modelsRef = useRef<Map<string, any>>(new Map());
+  const loadingModelsRef = useRef<Set<string>>(new Set()); // 로딩 중인 모델 ID 추적
   const loaderRef = useRef<any>(null);
   const raycasterRef = useRef<any>(null);
   const mouseRef = useRef<any>(null);
@@ -266,7 +267,7 @@ export function Unified3DScene({
     ground.castShadow = false; // 지면은 그림자를 만들지 않음
     ground.name = 'ground';
     scene.add(ground);
-    
+
     // 그림자 카메라 위치 업데이트
     directionalLight1.shadow.camera.updateProjectionMatrix();
 
@@ -278,6 +279,8 @@ export function Unified3DScene({
     // GLTF Loader
     const GLTFLoader = THREE.GLTFLoader || (window as any).THREE.GLTFLoader;
     const loader = new GLTFLoader();
+    // ngrok 환경에서 브라우저 경고 창을 우회하기 위한 헤더 추가
+    loader.setRequestHeader({ 'ngrok-skip-browser-warning': 'true' });
     loaderRef.current = loader;
 
     // Raycaster
@@ -296,7 +299,7 @@ export function Unified3DScene({
       const damping = 5.0 * delta;
 
       orbitControls.update();
-      
+
       // 그림자 맵 지속 업데이트
       if (renderer.shadowMap.enabled) {
         // 모델이 있을 때만 그림자 업데이트
@@ -312,10 +315,10 @@ export function Unified3DScene({
         if (modelGroup) {
           const currentPos = modelGroup.position;
           const targetPos = targetPositionRef.current;
-          
+
           // 핀치 드래그 중일 때는 즉시 위치 업데이트, 아닐 때만 부드럽게 보간
           const isDragging = gestureControllerRef.current?.isDraggingActive() ?? false;
-          
+
           if (isDragging) {
             // 드래그 중: 즉시 위치 업데이트 (지연 없음)
             currentPos.set(targetPos.x, targetPos.y, targetPos.z);
@@ -326,7 +329,7 @@ export function Unified3DScene({
               damping
             );
           }
-          
+
           if (callbacksRef.current.onModelDrag) {
             callbacksRef.current.onModelDrag(selectedModelId, {
               x: currentPos.x,
@@ -458,12 +461,42 @@ export function Unified3DScene({
     const THREE = (window as any).THREE;
 
     models.forEach((model) => {
-      if (modelsRef.current.has(model.id)) return;
+      // 이미 로드되었거나 현재 로딩 중이면 건너뜀
+      if (modelsRef.current.has(model.id) || loadingModelsRef.current.has(model.id)) return;
+
+      // 로딩 시작 마킹
+      loadingModelsRef.current.add(model.id);
+
+      // URL 정규화 (S3 CORS 문제 해결용)
+      let finalUrl = model.modelUrl;
+      const s3BucketDomain = 'madcampw3withyc1.s3.ap-northeast-2.amazonaws.com';
+
+      if (finalUrl.includes(s3BucketDomain)) {
+        try {
+          const url = new URL(finalUrl);
+          finalUrl = `/s3-proxy${url.pathname}${url.search}`;
+        } catch (e) {
+          console.warn('URL parsing failed for S3 model:', finalUrl);
+        }
+      }
 
       loaderRef.current.load(
-        model.modelUrl,
+        finalUrl,
         (gltf: any) => {
+          // 로딩 완료 후 마킹 해제
+          loadingModelsRef.current.delete(model.id);
+
           if (!sceneRef.current) return;
+
+          // 로드 완료 전 모델이 리스트에서 사라진 경우 (Cleanup 상황)
+          if (!models.find(m => m.id === model.id)) {
+            return;
+          }
+
+          // 최종 중복 체크 (로드 지연 시간 동안 추가되었을 가능성 방지)
+          if (modelsRef.current.has(model.id)) {
+            return;
+          }
 
           const modelGroup = new THREE.Group();
           modelGroup.add(gltf.scene.clone());
@@ -489,13 +522,13 @@ export function Unified3DScene({
               // 그림자 설정 강제 적용
               child.castShadow = true;
               child.receiveShadow = true;
-              
+
               // 그림자가 제대로 표시되도록 추가 설정
               if (child.geometry) {
                 child.geometry.computeBoundingBox();
                 child.geometry.computeBoundingSphere();
               }
-              
+
               if (child.material) {
                 if (Array.isArray(child.material)) {
                   child.material.forEach((mat: any) => {
@@ -517,7 +550,7 @@ export function Unified3DScene({
               }
             }
           });
-          
+
           // 모델 그룹 자체도 그림자 설정
           modelGroup.castShadow = true;
           modelGroup.receiveShadow = true;
@@ -532,7 +565,7 @@ export function Unified3DScene({
               const center = box.getCenter(new THREE.Vector3());
               const size = box.getSize(new THREE.Vector3());
               const maxDim = Math.max(size.x, size.y, size.z);
-              
+
               if (maxDim > 0) {
                 // 모델 크기에 맞춰 카메라 거리 계산 (더 가깝게 줌인)
                 const distance = maxDim * 1.5;
@@ -541,28 +574,28 @@ export function Unified3DScene({
                   center.y + distance * 0.6,
                   center.z + distance * 0.8
                 );
-                
+
                 // 부드럽게 카메라 이동
                 const currentPos = cameraRef.current.position.clone();
                 const targetPos = cameraPos;
                 const duration = 1000; // 1초
                 const startTime = Date.now();
-                
+
                 const animateCamera = () => {
                   const elapsed = Date.now() - startTime;
                   const progress = Math.min(elapsed / duration, 1);
                   const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
-                  
+
                   cameraRef.current.position.lerpVectors(currentPos, targetPos, eased);
                   cameraRef.current.lookAt(center);
                   controlsRef.current.target.copy(center);
                   controlsRef.current.update();
-                  
+
                   if (progress < 1) {
                     requestAnimationFrame(animateCamera);
                   }
                 };
-                
+
                 animateCamera();
               }
             }
@@ -576,6 +609,7 @@ export function Unified3DScene({
         undefined,
         (error: Error) => {
           console.error('Error loading model:', error);
+          loadingModelsRef.current.delete(model.id); // 에러 발생 시에도 로딩 중 마킹 해제
         }
       );
     });
@@ -678,7 +712,7 @@ export function Unified3DScene({
     const loadMediaPipe = async () => {
       try {
         console.log('[Hand Gesture] Starting MediaPipe initialization...');
-        
+
         // MediaPipe Hands는 이미 import로 로드되었습니다
         console.log('[Hand Gesture] MediaPipe Hands available via npm');
 
@@ -717,8 +751,8 @@ export function Unified3DScene({
         videoRef.current = video;
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { 
-            width: 640, 
+          video: {
+            width: 640,
             height: 480,
             facingMode: 'user'
           }
@@ -734,7 +768,7 @@ export function Unified3DScene({
             console.warn('[Hand Gesture] Gesture controller not available');
             return;
           }
-          
+
           if (!selectedModelId) {
             // No model selected, skip processing
             return;

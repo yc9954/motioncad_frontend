@@ -79,7 +79,7 @@ export function ProfileCard({
     nickname: name || "",
     region: location || "",
     job: role || "",
-    description: description || "",
+    userDescription: description || "",
   });
 
   // Update form data when props change
@@ -88,7 +88,7 @@ export function ProfileCard({
       nickname: name || "",
       region: location || "",
       job: role || "",
-      description: description || "",
+      userDescription: description || "",
     });
   }, [name, location, role, description]);
 
@@ -96,7 +96,8 @@ export function ProfileCard({
     const { id, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [id]: value,
+      // If the id is 'description' (from the Textarea id), map it to 'userDescription' for the API
+      [id === "description" ? "userDescription" : id]: value,
     }));
   };
 
@@ -219,7 +220,7 @@ export function ProfileCard({
                         </Label>
                         <Textarea
                           id="description"
-                          value={formData.description}
+                          value={formData.userDescription}
                           onChange={handleInputChange}
                           placeholder="Tell us about yourself"
                           className="col-span-3 resize-none"
@@ -269,16 +270,6 @@ export function ProfileCard({
             </div>
           </div>
 
-          {/* Skills/Tags */}
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Skills</h3>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary">3D Modeling</Badge>
-              <Badge variant="secondary">GLB/GLTF</Badge>
-              <Badge variant="secondary">Three.js</Badge>
-              <Badge variant="secondary">Design</Badge>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>
