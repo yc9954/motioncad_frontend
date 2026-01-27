@@ -131,7 +131,7 @@ export function Unified3DScene({
       0.1,
       1000
     );
-    camera.position.set(5, 5, 10);
+    camera.position.set(3, 3, 6);
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
@@ -165,7 +165,7 @@ export function Unified3DScene({
     orbitControls.dampingFactor = 0.05;
     orbitControls.enableZoom = true;
     orbitControls.enablePan = true;
-    orbitControls.minDistance = 2;
+    orbitControls.minDistance = 1;
     orbitControls.maxDistance = 50;
     orbitControls.target.set(0, 0, 0);
     controlsRef.current = orbitControls;
@@ -513,6 +513,49 @@ export function Unified3DScene({
 
           sceneRef.current.add(modelGroup);
           modelsRef.current.set(model.id, modelGroup);
+
+          // 첫 번째 모델이 로드될 때 카메라를 모델에 맞게 조정 (더 줌인)
+          if (modelsRef.current.size === 1 && cameraRef.current && controlsRef.current) {
+            const box = new THREE.Box3().setFromObject(modelGroup);
+            if (!box.isEmpty()) {
+              const center = box.getCenter(new THREE.Vector3());
+              const size = box.getSize(new THREE.Vector3());
+              const maxDim = Math.max(size.x, size.y, size.z);
+              
+              if (maxDim > 0) {
+                // 모델 크기에 맞춰 카메라 거리 계산 (더 가깝게 줌인)
+                const distance = maxDim * 1.5;
+                const cameraPos = new THREE.Vector3(
+                  center.x + distance * 0.6,
+                  center.y + distance * 0.6,
+                  center.z + distance * 0.8
+                );
+                
+                // 부드럽게 카메라 이동
+                const currentPos = cameraRef.current.position.clone();
+                const targetPos = cameraPos;
+                const duration = 1000; // 1초
+                const startTime = Date.now();
+                
+                const animateCamera = () => {
+                  const elapsed = Date.now() - startTime;
+                  const progress = Math.min(elapsed / duration, 1);
+                  const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+                  
+                  cameraRef.current.position.lerpVectors(currentPos, targetPos, eased);
+                  cameraRef.current.lookAt(center);
+                  controlsRef.current.target.copy(center);
+                  controlsRef.current.update();
+                  
+                  if (progress < 1) {
+                    requestAnimationFrame(animateCamera);
+                  }
+                };
+                
+                animateCamera();
+              }
+            }
+          }
 
           // 방금 추가된 모델이 선택된 모델이면 TransformControls 연결
           if (model.id === selectedModelId && transformControlsRef.current) {

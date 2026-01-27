@@ -19,6 +19,7 @@ import { TravelCard } from "@/app/components/ui/travel-card";
 import { Dialog, DialogContent, DialogOverlay } from "@/app/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/app/components/ui/tabs";
 import { projectApi, assetApi, ComponentRequest, ProjectRequest } from "@/lib/api";
+import { GlassCard } from "@/app/components/ui/glass-card";
 // import LiquidGlass from "liquid-glass-react";
 
 // 씬 모델 타입 정의
@@ -302,7 +303,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     // 최대 30분까지 폴링 (5초 간격 = 360회)
     const maxAttempts = 360;
     let attempts = 0;
-    let pollInterval: NodeJS.Timeout | null = null;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
 
     const poll = async () => {
       try {
@@ -710,18 +711,18 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       toast.error(error instanceof Error ? error.message : '프로젝트 저장에 실패했습니다.');
       
       // 실패 시 로컬 스토리지에 백업 저장
-      const diorama: Diorama = {
-        id: `diorama-${Date.now()}`,
-        name: dioramaName,
-        models: [...sceneModels],
-        groups: [...modelGroups],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      const existingDioramas = JSON.parse(localStorage.getItem("dioramas") || "[]");
-      existingDioramas.push(diorama);
-      localStorage.setItem("dioramas", JSON.stringify(existingDioramas));
-      setSavedDioramas((prev) => [...prev, diorama]);
+    const diorama: Diorama = {
+      id: `diorama-${Date.now()}`,
+      name: dioramaName,
+      models: [...sceneModels],
+      groups: [...modelGroups],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const existingDioramas = JSON.parse(localStorage.getItem("dioramas") || "[]");
+    existingDioramas.push(diorama);
+    localStorage.setItem("dioramas", JSON.stringify(existingDioramas));
+    setSavedDioramas((prev) => [...prev, diorama]);
     }
   }, [dioramaName, sceneModels, modelGroups]);
 
@@ -847,13 +848,13 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     try {
       // Three.js와 GLTFLoader 로드
       if (!(window as any).THREE) {
-        const threeScript = document.createElement('script');
-        threeScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+      const threeScript = document.createElement('script');
+      threeScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
         await new Promise((resolve, reject) => {
           threeScript.onload = () => resolve(undefined);
-          threeScript.onerror = () => reject(new Error('Three.js 로드 실패'));
-          document.head.appendChild(threeScript);
-        });
+      threeScript.onerror = () => reject(new Error('Three.js 로드 실패'));
+      document.head.appendChild(threeScript);
+    });
       }
 
       const THREE = (window as any).THREE;
@@ -1228,7 +1229,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     const target = e.currentTarget as HTMLElement;
     const relatedTarget = e.relatedTarget as HTMLElement | null;
     if (!relatedTarget || !target.contains(relatedTarget)) {
-      setIsDraggingOver(false);
+    setIsDraggingOver(false);
     }
   };
 
@@ -1361,73 +1362,73 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2">
-                프롬프트 입력
-              </label>
-              <Textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="원하는 3D 모델을 설명해주세요..."
+                  프롬프트 입력
+                </label>
+                <Textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="원하는 3D 모델을 설명해주세요..."
                 className="min-h-[120px] bg-background resize-none"
-                disabled={isGenerating}
-              />
-            </div>
+                  disabled={isGenerating}
+                />
+              </div>
 
-            <Button
-              onClick={handleGenerate}
-              disabled={isGenerating || !prompt.trim() || !apiKey}
+              <Button
+                onClick={handleGenerate}
+                disabled={isGenerating || !prompt.trim() || !apiKey}
               className="w-full"
               size="lg"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {status || "생성 중..."}
-                </>
-              ) : (
-                <>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  모델 생성
-                </>
-              )}
-            </Button>
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {status || "생성 중..."}
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    모델 생성
+                  </>
+                )}
+              </Button>
 
-            {isGenerating && (
+              {isGenerating && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{taskStatusDetail || "요청 중..."}</span>
-                  {taskProgress !== null && (
+                    <span className="text-muted-foreground">{taskStatusDetail || "요청 중..."}</span>
+                    {taskProgress !== null && (
                     <span className="font-semibold text-primary">{taskProgress}%</span>
+                    )}
+                  </div>
+                  {taskProgress !== null && (
+                  <div className="w-full bg-muted rounded-full h-2">
+                      <div
+                      className="bg-primary h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${Math.min(taskProgress, 100)}%` }}
+                      />
+                    </div>
                   )}
                 </div>
-                {taskProgress !== null && (
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div
-                      className="bg-primary h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${Math.min(taskProgress, 100)}%` }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+              )}
 
-            {error && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+              {error && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
                 <div className="flex items-center gap-2 text-destructive text-sm">
                   <XCircle className="h-4 w-4" />
                   <span>{error}</span>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
-        </div>
+            </div>
 
         {/* 설정 섹션 */}
         <div className="p-4 space-y-4 border-t overflow-y-auto flex-shrink-0">
           {/* 파일 업로드 영역 */}
           <div>
             <label className="block text-sm font-medium mb-2">
-              파일 업로드
-            </label>
+                  파일 업로드
+                </label>
             <div
               className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
                 isDraggingFile
@@ -1453,11 +1454,11 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 <Upload className="h-8 w-8 text-muted-foreground" />
                 <div className="text-sm">
                   <span className="text-primary hover:underline">클릭하여 업로드</span>
-                  <span className="text-muted-foreground"> 또는 드래그 앤 드롭</span>
-                </div>
+                    <span className="text-muted-foreground"> 또는 드래그 앤 드롭</span>
+                  </div>
                 <p className="text-xs text-muted-foreground">
                   JPG, PNG, WEBP (≤5MB) 또는 GLB, OBJ, FBX, STL (≤100MB)
-                </p>
+                  </p>
               </label>
             </div>
 
@@ -1525,86 +1526,86 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 ))}
               </div>
             )}
-          </div>
-        </div>
+              </div>
+            </div>
 
         {/* 생성된 에셋 목록 (왼쪽 패널 하단) */}
         <div className="p-4 border-t overflow-y-auto flex-1">
           <h3 className="text-sm font-semibold mb-3">생성된 에셋</h3>
-          {generatedModels.length > 0 ? (
+            {generatedModels.length > 0 ? (
             <div className="space-y-2">
-              {generatedModels.map((model, index) => (
+                {generatedModels.map((model, index) => (
                 <Card key={index} className="overflow-hidden">
-                  <div className="aspect-video bg-muted overflow-hidden relative">
-                    {model.modelUrl && !model.isLoading ? (
-                      <div className="w-full h-full">
-                        <ModelViewer
-                          src={model.modelUrl}
-                          alt="3D 모델"
-                          className="w-full h-full"
+                    <div className="aspect-video bg-muted overflow-hidden relative">
+                      {model.modelUrl && !model.isLoading ? (
+                        <div className="w-full h-full">
+                          <ModelViewer
+                            src={model.modelUrl}
+                            alt="3D 모델"
+                            className="w-full h-full"
+                          />
+                        </div>
+                      ) : model.previewImageUrl && !model.isLoading ? (
+                        <img
+                          src={model.previewImageUrl}
+                          alt="미리보기"
+                          className="w-full h-full object-cover"
                         />
-                      </div>
-                    ) : model.previewImageUrl && !model.isLoading ? (
-                      <img
-                        src={model.previewImageUrl}
-                        alt="미리보기"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-muted p-3">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
-                        {model.progress !== undefined && model.progress !== null && (
-                          <>
-                            <div className="w-full bg-background/50 rounded-full h-1.5 mb-1">
-                              <div
-                                className="bg-primary h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${Math.min(model.progress, 100)}%` }}
-                              />
-                            </div>
-                            <span className="text-xs font-medium text-foreground">
-                              {model.progress}%
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-muted p-3">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
+                          {model.progress !== undefined && model.progress !== null && (
+                            <>
+                              <div className="w-full bg-background/50 rounded-full h-1.5 mb-1">
+                                <div
+                                  className="bg-primary h-1.5 rounded-full transition-all duration-300"
+                                  style={{ width: `${Math.min(model.progress, 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-medium text-foreground">
+                                {model.progress}%
+                              </span>
+                            </>
+                          )}
+                          {(!model.progress && model.progress !== 0) && (
+                            <span className="text-xs text-muted-foreground">
+                              {model.status === "queued" ? "대기 중..." : "생성 중..."}
                             </span>
-                          </>
-                        )}
-                        {(!model.progress && model.progress !== 0) && (
-                          <span className="text-xs text-muted-foreground">
-                            {model.status === "queued" ? "대기 중..." : "생성 중..."}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   <div className="p-3 space-y-2">
                     <p className="text-xs text-muted-foreground line-clamp-2">
-                      {model.prompt || "생성 중..."}
-                    </p>
+                        {model.prompt || "생성 중..."}
+                      </p>
                     <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
+                        <Button
+                          size="sm"
+                          variant="outline"
                         className="flex-1 h-7 text-xs"
-                        onClick={() => handleDownload(model)}
-                        disabled={!model.modelUrl || model.isLoading}
-                      >
-                        <Download className="h-3 w-3 mr-1" />
-                        다운로드
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
+                          onClick={() => handleDownload(model)}
+                          disabled={!model.modelUrl || model.isLoading}
+                        >
+                          <Download className="h-3 w-3 mr-1" />
+                          다운로드
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
                         className="flex-1 h-7 text-xs"
-                        onClick={() => handleAddToScene(model)}
-                        disabled={!model.modelUrl || model.isLoading}
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        씬 추가
-                      </Button>
+                          onClick={() => handleAddToScene(model)}
+                          disabled={!model.modelUrl || model.isLoading}
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          씬 추가
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          ) : (
+                  </Card>
+                ))}
+              </div>
+            ) : (
             <div className="text-center py-8 text-muted-foreground text-sm">
               <ImageIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
               <p>생성된 모델이 없습니다</p>
@@ -1701,68 +1702,68 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
       {/* 오른쪽 패널: 씬 관리 및 에셋 조합 */}
       <div className="w-80 border-l bg-sidebar flex flex-col">
-        {/* 디오라마 헤더 */}
+          {/* 디오라마 헤더 */}
         <div className="p-4 border-b">
           <div className="flex items-center gap-2 mb-3">
-            <Input
-              value={dioramaName}
-              onChange={(e) => setDioramaName(e.target.value)}
+              <Input
+                value={dioramaName}
+                onChange={(e) => setDioramaName(e.target.value)}
               className="h-8 text-sm font-semibold"
-              placeholder="디오라마 이름"
-            />
-          </div>
+                placeholder="디오라마 이름"
+              />
+            </div>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" className="flex-1" onClick={handleSaveDiorama}>
               <Save className="h-3 w-3 mr-1" />
-              저장
-            </Button>
+                저장
+              </Button>
             <Button size="sm" variant="outline" className="flex-1" onClick={handleExportDiorama}>
               <FileDown className="h-3 w-3 mr-1" />
-              내보내기
-            </Button>
-            <label className="flex-1">
-              <input
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={handleImportDiorama}
-              />
-              <Button size="sm" variant="outline" className="w-full" asChild>
-                <span>
-                  <Upload className="h-3 w-3 mr-1" />
-                  불러오기
-                </span>
+                내보내기
               </Button>
-            </label>
+              <label className="flex-1">
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={handleImportDiorama}
+                />
+              <Button size="sm" variant="outline" className="w-full" asChild>
+                  <span>
+                  <Upload className="h-3 w-3 mr-1" />
+                    불러오기
+                  </span>
+                </Button>
+              </label>
           </div>
-        </div>
+            </div>
 
-        {/* 씬 모델 목록 */}
+            {/* 씬 모델 목록 */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-4 border-b">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold">배경 파츠 ({sceneModels.length})</h3>
-              <div className="flex gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
                   className="h-6 w-6 p-0"
-                  onClick={handleCreateGroup}
-                  disabled={selectedModelIds.length < 2}
-                  title="그룹 만들기"
-                >
+                    onClick={handleCreateGroup}
+                    disabled={selectedModelIds.length < 2}
+                    title="그룹 만들기"
+                  >
                   <FolderPlus className="h-3 w-3" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
                   className="h-6 w-6 p-0"
-                  onClick={handleDeleteSelectedModels}
-                  disabled={selectedModelIds.length === 0}
-                  title="선택 삭제"
-                >
+                    onClick={handleDeleteSelectedModels}
+                    disabled={selectedModelIds.length === 0}
+                    title="선택 삭제"
+                  >
                   <Trash2 className="h-3 w-3" />
-                </Button>
+                  </Button>
               </div>
             </div>
 
@@ -1850,10 +1851,10 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 ))}
               </div>
             )}
-          </div>
+            </div>
 
-          {/* 선택된 모델 변환 컨트롤 */}
-          {selectedModel && (
+            {/* 선택된 모델 변환 컨트롤 */}
+            {selectedModel && (
             <div className="p-4 border-b">
               <h3 className="text-sm font-semibold mb-3">변환 (Transform)</h3>
 
@@ -1874,33 +1875,33 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 </Button>
                 
                 <div className="flex gap-1">
-                  <Button
-                    size="sm"
-                    variant={transformMode === "position" ? "default" : "outline"}
+                <Button
+                  size="sm"
+                  variant={transformMode === "position" ? "default" : "outline"}
                     className="flex-1 h-7"
-                    onClick={() => setTransformMode("position")}
-                  >
+                  onClick={() => setTransformMode("position")}
+                >
                     <Move className="h-3 w-3 mr-1" />
-                    위치
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={transformMode === "rotation" ? "default" : "outline"}
+                  위치
+                </Button>
+                <Button
+                  size="sm"
+                  variant={transformMode === "rotation" ? "default" : "outline"}
                     className="flex-1 h-7"
-                    onClick={() => setTransformMode("rotation")}
-                  >
+                  onClick={() => setTransformMode("rotation")}
+                >
                     <RotateCcw className="h-3 w-3 mr-1" />
-                    회전
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={transformMode === "scale" ? "default" : "outline"}
+                  회전
+                </Button>
+                <Button
+                  size="sm"
+                  variant={transformMode === "scale" ? "default" : "outline"}
                     className="flex-1 h-7"
-                    onClick={() => setTransformMode("scale")}
-                  >
+                  onClick={() => setTransformMode("scale")}
+                >
                     <Maximize2 className="h-3 w-3 mr-1" />
-                    크기
-                  </Button>
+                  크기
+                </Button>
                 </div>
               </div>
 
@@ -1977,10 +1978,10 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                   />
                 </div>
               )}
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* 생성된 에셋 (드래그 가능) */}
+            {/* 생성된 에셋 (드래그 가능) */}
           <div className="p-4 border-b">
             <h3 className="text-sm font-semibold mb-3">생성된 에셋</h3>
             {generatedModels.length > 0 ? (
@@ -2042,9 +2043,9 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 <p>생성된 모델이 없습니다</p>
               </div>
             )}
-          </div>
+            </div>
 
-          {/* 추천 에셋 */}
+            {/* 추천 에셋 */}
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold">부품 파츠</h3>
@@ -2066,8 +2067,8 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 
                 return (
                   <div
-                    key={asset.id}
-                    draggable={true}
+                  key={asset.id}
+                  draggable={true}
                     onDragStart={(e) => handleDragStart(e, {
                       ...asset,
                       modelUrl: asset.glbUrl,
@@ -2114,64 +2115,25 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       <Dialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen}>
         <DialogContent 
             className="max-w-[95vw] w-[95vw] max-h-[85vh] overflow-y-auto p-0 border-0 shadow-2xl bg-transparent"
-            overlayClassName="bg-black/5 backdrop-blur-sm"
           >
             <div 
-              className="p-6 space-y-6 relative rounded-3xl overflow-hidden"
-              style={{
-                boxShadow: "0 6px 6px rgba(0, 0, 0, 0.2), 0 0 20px rgba(0, 0, 0, 0.1)",
-              }}
+              className="w-full max-h-[85vh] overflow-y-auto p-6 space-y-6 rounded-2xl border bg-white shadow-lg"
             >
-              {/* Glass Layer 1: Backdrop blur */}
-              <div
-                className="absolute inset-0 z-0 overflow-hidden rounded-3xl"
-                style={{
-                  backdropFilter: "blur(20px)",
-                  WebkitBackdropFilter: "blur(20px)",
-                  isolation: "isolate",
-                }}
-              />
-              
-              {/* Glass Layer 2: White overlay */}
-              <div
-                className="absolute inset-0 z-10 rounded-3xl"
-                style={{ background: "rgba(255, 255, 255, 0.15)" }}
-              />
-              
-              {/* Glass Layer 3: Inset highlights */}
-              <div
-                className="absolute inset-0 z-20 rounded-3xl overflow-hidden pointer-events-none"
-                style={{
-                  boxShadow:
-                    "inset 2px 2px 1px 0 rgba(255, 255, 255, 0.5), inset -1px -1px 1px 1px rgba(255, 255, 255, 0.5)",
-                }}
-              />
-              
-              {/* Content */}
-              <div className="relative z-30">
-            {/* 검색 바 */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
-              <Input
-                placeholder="Search components, screens, themes..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 h-12 text-base border-white/20 bg-white/5"
-                autoFocus
-              />
-            </div>
+              {/* 검색 바 */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+                <Input
+                  placeholder="Search components, screens, themes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 h-12 text-base"
+                  autoFocus
+                />
+              </div>
 
-            {/* 필터 탭 */}
-            <Tabs defaultValue="components" className="w-full">
-              <TabsList 
-                className="w-full justify-start h-auto p-1 border-white/30 rounded-xl"
-                style={{
-                  background: 'rgba(255, 255, 255, 0.15)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  boxShadow: 'inset 1px 1px 1px 0 rgba(255, 255, 255, 0.3), inset -1px -1px 1px 0 rgba(255, 255, 255, 0.2)',
-                }}
-              >
+              {/* 필터 탭 */}
+              <Tabs defaultValue="components" className="w-full">
+                <TabsList className="w-full justify-start h-auto p-1">
                 <TabsTrigger value="components">Components</TabsTrigger>
                 <TabsTrigger value="featured">Featured</TabsTrigger>
                 <TabsTrigger value="newest">Newest</TabsTrigger>
@@ -2190,19 +2152,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 {[1, 2, 3, 4, 5, 6].map((i) => (
                   <div
                     key={i}
-                    className="aspect-square rounded-xl border border-white/30 transition-all cursor-pointer flex items-center justify-center hover:scale-105 overflow-hidden"
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.15)',
-                      backdropFilter: 'blur(10px)',
-                      WebkitBackdropFilter: 'blur(10px)',
-                      boxShadow: 'inset 1px 1px 1px 0 rgba(255, 255, 255, 0.3), inset -1px -1px 1px 0 rgba(255, 255, 255, 0.2)',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                    }}
+                    className="aspect-square rounded-xl border bg-gray-50 transition-all cursor-pointer flex items-center justify-center hover:scale-105 hover:bg-gray-100"
                   >
                     <div className="text-2xl">🎨</div>
                   </div>
@@ -2222,26 +2172,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                     ].map((item, index) => (
                       <Card 
                         key={index} 
-                        className="p-4 transition-all cursor-pointer border-white/30 rounded-xl hover:scale-[1.02] overflow-hidden"
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.15)',
-                          backdropFilter: 'blur(10px)',
-                          WebkitBackdropFilter: 'blur(10px)',
-                          boxShadow: 'inset 1px 1px 1px 0 rgba(255, 255, 255, 0.3), inset -1px -1px 1px 0 rgba(255, 255, 255, 0.2)',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                        }}
+                        className="p-4 transition-all cursor-pointer border bg-gray-50 rounded-xl hover:scale-[1.02] hover:bg-gray-100"
                       >
                         <h4 className="font-semibold mb-2">{item.title}</h4>
                         <p className="text-sm text-muted-foreground">{item.description}</p>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
+                </Card>
+              ))}
+            </div>
+          </div>
               </TabsContent>
 
               <TabsContent value="featured" className="mt-6">
@@ -2255,26 +2193,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                     ].map((item, index) => (
                       <Card 
                         key={index} 
-                        className="p-4 transition-all cursor-pointer border-white/30 rounded-xl hover:scale-[1.02] overflow-hidden"
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.15)',
-                          backdropFilter: 'blur(10px)',
-                          WebkitBackdropFilter: 'blur(10px)',
-                          boxShadow: 'inset 1px 1px 1px 0 rgba(255, 255, 255, 0.3), inset -1px -1px 1px 0 rgba(255, 255, 255, 0.2)',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                        }}
+                        className="p-4 transition-all cursor-pointer border bg-gray-50 rounded-xl hover:scale-[1.02] hover:bg-gray-100"
                       >
                         <h4 className="font-semibold mb-2">{item.title}</h4>
                         <p className="text-sm text-muted-foreground">{item.description}</p>
                       </Card>
                     ))}
-                  </div>
-                </div>
+        </div>
+      </div>
               </TabsContent>
 
               <TabsContent value="newest" className="mt-6">
@@ -2292,14 +2218,10 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               </TabsContent>
             </Tabs>
 
-            {/* 하단 링크 */}
-            <div 
-              className="flex gap-4 pt-4 text-sm text-muted-foreground"
-              style={{ borderTop: '1px solid rgba(255, 255, 255, 0.3)' }}
-            >
-              <a href="#" className="hover:text-foreground transition-colors">Contact support</a>
-              <a href="#" className="hover:text-foreground transition-colors">Share feedback</a>
-            </div>
+              {/* 하단 링크 */}
+              <div className="flex gap-4 pt-4 border-t text-sm text-muted-foreground">
+                <a href="#" className="hover:text-foreground transition-colors">Contact support</a>
+                <a href="#" className="hover:text-foreground transition-colors">Share feedback</a>
               </div>
             </div>
           </DialogContent>
@@ -2310,14 +2232,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
 // 모델 리스트 아이템 컴포넌트
 function ModelListItem({
-  model,
-  isSelected,
-  onSelect,
-  onDelete,
-  onDuplicate,
-  onToggleVisibility,
-  onToggleLock,
-  onRename,
+    model,
+    isSelected,
+    onSelect,
+    onDelete,
+    onDuplicate,
+    onToggleVisibility,
+    onToggleLock,
+    onRename,
 }: {
   model: SceneModel;
   isSelected: boolean;
