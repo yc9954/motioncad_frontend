@@ -726,34 +726,106 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     }
   }, [dioramaName, sceneModels, modelGroups]);
 
-  // 디오라마 내보내기 (JSON)
-  const handleExportDiorama = useCallback(() => {
-    const diorama = {
-      name: dioramaName,
-      models: sceneModels.map(m => ({
-        id: m.id,
-        name: m.name,
-        modelUrl: m.modelUrl,
-        position: m.position,
-        rotation: m.rotation,
-        scale: m.scale,
-        visible: m.visible,
-        locked: m.locked,
-        groupId: m.groupId,
-      })),
-      groups: modelGroups,
-      exportedAt: new Date().toISOString(),
-    };
+  // 디오라마 내보내기 (GLB)
+  const handleExportDiorama = useCallback(async () => {
+    if (sceneModels.length === 0) {
+      toast.error("내보낼 모델이 없습니다.");
+      return;
+    }
 
-    const blob = new Blob([JSON.stringify(diorama, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${dioramaName.replace(/\s+/g, "_")}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("디오라마가 내보내졌습니다.");
-  }, [dioramaName, sceneModels, modelGroups]);
+    try {
+      toast.info("GLB 파일 생성 중...");
+      
+      // Three.js와 GLTFExporter 로드
+      const THREE = await import('three');
+      const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js');
+      const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+
+      // 임시 씬 생성
+      const exportScene = new THREE.Scene();
+      const loader = new GLTFLoader();
+
+      // 모든 모델 로드 및 씬에 추가
+      const loadPromises = sceneModels
+        .filter(model => model.visible && model.modelUrl)
+        .map(async (model) => {
+          try {
+            const gltf = await new Promise<any>((resolve, reject) => {
+              loader.load(
+                model.modelUrl!,
+                resolve,
+                undefined,
+                reject
+              );
+            });
+
+            const modelGroup = gltf.scene.clone();
+            
+            // 위치, 회전, 스케일 적용
+            modelGroup.position.set(
+              model.position.x,
+              model.position.y,
+              model.position.z
+            );
+            modelGroup.rotation.set(
+              model.rotation.x,
+              model.rotation.y,
+              model.rotation.z
+            );
+            modelGroup.scale.set(
+              model.scale,
+              model.scale,
+              model.scale
+            );
+
+            // 모델 이름 설정
+            modelGroup.name = model.name || `Model_${model.id}`;
+
+            exportScene.add(modelGroup);
+          } catch (error) {
+            console.error(`Failed to load model ${model.id}:`, error);
+            toast.warning(`모델 "${model.name}" 로드 실패`);
+          }
+        });
+
+      await Promise.all(loadPromises);
+
+      if (exportScene.children.length === 0) {
+        toast.error("내보낼 수 있는 모델이 없습니다.");
+        return;
+      }
+
+      // GLTFExporter로 GLB 파일 생성
+      const exporter = new GLTFExporter();
+      const result = await new Promise<any>((resolve, reject) => {
+        exporter.parse(
+          exportScene,
+          (glb: any) => resolve(glb),
+          (error: Error) => reject(error),
+          {
+            binary: true, // GLB 형식으로 내보내기
+            includeCustomExtensions: true,
+          }
+        );
+      });
+
+      // Blob 생성 및 다운로드
+      const blob = new Blob([result], { type: 'model/gltf-binary' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${dioramaName.replace(/\s+/g, "_")}.glb`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success("GLB 파일이 내보내졌습니다.");
+    } catch (error) {
+      console.error('GLB 내보내기 실패:', error);
+      toast.error("GLB 파일 내보내기 실패: " + (error instanceof Error ? error.message : "알 수 없는 오류"));
+    }
+  }, [dioramaName, sceneModels]);
 
   // 디오라마 불러오기
   const handleImportDiorama = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1422,195 +1494,202 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           </div>
             </div>
 
-        {/* 설정 섹션 */}
-        <div className="p-4 space-y-4 border-t overflow-y-auto flex-shrink-0">
-          {/* 파일 업로드 영역 */}
-          <div>
-            <label className="block text-sm font-medium mb-2">
-                  파일 업로드
-                </label>
-            <div
-              className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
-                isDraggingFile
-                  ? "border-primary bg-primary/10"
-                  : "border-muted-foreground/25 hover:border-muted-foreground/50"
-              }`}
-              onDragOver={handleFileDragOver}
-              onDragLeave={handleFileDragLeave}
-              onDrop={handleFileDrop}
-            >
-              <input
-                type="file"
-                id="file-upload"
-                className="hidden"
-                multiple
-                accept="image/jpeg,image/jpg,image/png,image/webp,.glb,.obj,.fbx,.stl"
-                onChange={handleFileSelect}
-              />
-              <label
-                htmlFor="file-upload"
-                className="cursor-pointer flex flex-col items-center gap-2"
-              >
-                <Upload className="h-8 w-8 text-muted-foreground" />
-                <div className="text-sm">
-                  <span className="text-primary hover:underline">클릭하여 업로드</span>
-                    <span className="text-muted-foreground"> 또는 드래그 앤 드롭</span>
-                  </div>
-                <p className="text-xs text-muted-foreground">
-                  JPG, PNG, WEBP (≤5MB) 또는 GLB, OBJ, FBX, STL (≤100MB)
-                  </p>
-              </label>
-            </div>
-
-            {/* 업로드된 파일 목록 */}
-            {uploadedFiles.length > 0 && (
-              <div className="mt-3 space-y-2">
-                {uploadedFiles.map((uploadedFile) => (
-                  <Card 
-                    key={uploadedFile.id} 
-                    className={`relative overflow-hidden ${
-                      uploadedFile.type === "model" ? "cursor-grab active:cursor-grabbing" : ""
-                    }`}
-                    draggable={uploadedFile.type === "model"}
-                    onDragStart={(e) => handleDragStart(e, {
-                      file: uploadedFile.file,
-                      previewUrl: uploadedFile.previewUrl,
-                      name: uploadedFile.file.name,
-                    })}
-                  >
-                    {/* 썸네일 영역 - 전체 너비 */}
-                    <div className="w-full aspect-square bg-muted overflow-hidden relative">
-                      {uploadedFile.previewUrl ? (
-                        <img
-                          src={uploadedFile.previewUrl}
-                          alt={uploadedFile.file.name}
-                          className="w-full h-full object-cover"
-                          style={{ imageRendering: 'auto' }}
-                          loading="lazy"
-                        />
-                      ) : uploadedFile.type === "model" ? (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
-                          <div className="text-center">
-                            <div className="text-3xl mb-1">📦</div>
-                            <p className="text-[10px] text-muted-foreground font-medium">3D</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* 파일 정보 영역 */}
-                    <div className="p-3 space-y-1">
-                      <p className="text-xs font-medium truncate leading-tight">{uploadedFile.file.name}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {(uploadedFile.file.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                    </div>
-                    
-                    {/* 삭제 버튼 - 우상단 */}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="absolute top-2 right-2 h-7 w-7 p-0 bg-background/80 hover:bg-background backdrop-blur-sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleFileRemove(uploadedFile.id, uploadedFile.previewUrl);
-                      }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </Card>
-                ))}
-              </div>
-            )}
-              </div>
-            </div>
-
-        {/* 생성된 에셋 목록 (왼쪽 패널 하단) */}
-        <div className="p-4 border-t overflow-y-auto flex-1">
+        {/* 생성된 에셋 목록 (고정 섹션) */}
+        <div className="p-4 border-t overflow-y-auto flex-shrink-0">
           <h3 className="text-sm font-semibold mb-3">생성된 에셋</h3>
-            {generatedModels.length > 0 ? (
+          {generatedModels.length > 0 ? (
             <div className="space-y-2">
-                {generatedModels.map((model, index) => (
+              {generatedModels.map((model, index) => (
                 <Card key={index} className="overflow-hidden">
-                    <div className="aspect-video bg-muted overflow-hidden relative">
-                      {model.modelUrl && !model.isLoading ? (
-                        <div className="w-full h-full">
-                          <ModelViewer
-                            src={model.modelUrl}
-                            alt="3D 모델"
-                            className="w-full h-full"
-                          />
-                        </div>
-                      ) : model.previewImageUrl && !model.isLoading ? (
-                        <img
-                          src={model.previewImageUrl}
-                          alt="미리보기"
-                          className="w-full h-full object-cover"
+                  <div className="aspect-video bg-muted overflow-hidden relative">
+                    {model.modelUrl && !model.isLoading ? (
+                      <div className="w-full h-full">
+                        <ModelViewer
+                          src={model.modelUrl}
+                          alt="3D 모델"
+                          className="w-full h-full"
                         />
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-muted p-3">
-                          <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
-                          {model.progress !== undefined && model.progress !== null && (
-                            <>
-                              <div className="w-full bg-background/50 rounded-full h-1.5 mb-1">
-                                <div
-                                  className="bg-primary h-1.5 rounded-full transition-all duration-300"
-                                  style={{ width: `${Math.min(model.progress, 100)}%` }}
-                                />
-                              </div>
-                              <span className="text-xs font-medium text-foreground">
-                                {model.progress}%
-                              </span>
-                            </>
-                          )}
-                          {(!model.progress && model.progress !== 0) && (
-                            <span className="text-xs text-muted-foreground">
-                              {model.status === "queued" ? "대기 중..." : "생성 중..."}
+                      </div>
+                    ) : model.previewImageUrl && !model.isLoading ? (
+                      <img
+                        src={model.previewImageUrl}
+                        alt="미리보기"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-muted p-3">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
+                        {model.progress !== undefined && model.progress !== null && (
+                          <>
+                            <div className="w-full bg-background/50 rounded-full h-1.5 mb-1">
+                              <div
+                                className="bg-primary h-1.5 rounded-full transition-all duration-300"
+                                style={{ width: `${Math.min(model.progress, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-medium text-foreground">
+                              {model.progress}%
                             </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                          </>
+                        )}
+                        {(!model.progress && model.progress !== 0) && (
+                          <span className="text-xs text-muted-foreground">
+                            {model.status === "queued" ? "대기 중..." : "생성 중..."}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <div className="p-3 space-y-2">
                     <p className="text-xs text-muted-foreground line-clamp-2">
-                        {model.prompt || "생성 중..."}
-                      </p>
+                      {model.prompt || "생성 중..."}
+                    </p>
                     <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
+                      <Button
+                        size="sm"
+                        variant="outline"
                         className="flex-1 h-7 text-xs"
-                          onClick={() => handleDownload(model)}
-                          disabled={!model.modelUrl || model.isLoading}
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          다운로드
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
+                        onClick={() => handleDownload(model)}
+                        disabled={!model.modelUrl || model.isLoading}
+                      >
+                        <Download className="h-3 w-3 mr-1" />
+                        다운로드
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         className="flex-1 h-7 text-xs"
-                          onClick={() => handleAddToScene(model)}
-                          disabled={!model.modelUrl || model.isLoading}
-                        >
-                          <Plus className="h-3 w-3 mr-1" />
-                          씬 추가
-                        </Button>
-                      </div>
+                        onClick={() => handleAddToScene(model)}
+                        disabled={!model.modelUrl || model.isLoading}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        씬 추가
+                      </Button>
                     </div>
-                  </Card>
-                ))}
-              </div>
-            ) : (
+                  </div>
+                </Card>
+              ))}
+            </div>
+          ) : (
             <div className="text-center py-8 text-muted-foreground text-sm">
               <ImageIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
               <p>생성된 모델이 없습니다</p>
             </div>
           )}
+        </div>
+
+        {/* 파일 업로드 섹션 - 스크롤 뷰 */}
+        <div className="flex-1 min-h-0 flex flex-col border-t">
+          <div className="overflow-y-auto p-4 space-y-4">
+            {/* 파일 업로드 영역 */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                파일 업로드
+              </label>
+              <div
+                className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+                  isDraggingFile
+                    ? "border-primary bg-primary/10"
+                    : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                }`}
+                onDragOver={handleFileDragOver}
+                onDragLeave={handleFileDragLeave}
+                onDrop={handleFileDrop}
+              >
+                <input
+                  type="file"
+                  id="file-upload"
+                  className="hidden"
+                  multiple
+                  accept="image/jpeg,image/jpg,image/png,image/webp,.glb,.obj,.fbx,.stl"
+                  onChange={handleFileSelect}
+                />
+                <label
+                  htmlFor="file-upload"
+                  className="cursor-pointer flex flex-col items-center gap-2"
+                >
+                  <Upload className="h-8 w-8 text-muted-foreground" />
+                  <div className="text-sm">
+                    <span className="text-primary hover:underline">클릭하여 업로드</span>
+                    <span className="text-muted-foreground"> 또는 드래그 앤 드롭</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    JPG, PNG, WEBP (≤5MB) 또는 GLB, OBJ, FBX, STL (≤100MB)
+                  </p>
+                </label>
+              </div>
+            </div>
+
+            {/* 업로드된 파일 목록 */}
+            {uploadedFiles.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  업로드된 파일 ({uploadedFiles.length})
+                </label>
+                <div className="space-y-2">
+                  {uploadedFiles.map((uploadedFile) => (
+                    <Card 
+                      key={uploadedFile.id} 
+                      className={`relative overflow-hidden ${
+                        uploadedFile.type === "model" ? "cursor-grab active:cursor-grabbing" : ""
+                      }`}
+                      draggable={uploadedFile.type === "model"}
+                      onDragStart={(e) => handleDragStart(e, {
+                        file: uploadedFile.file,
+                        previewUrl: uploadedFile.previewUrl,
+                        name: uploadedFile.file.name,
+                      })}
+                    >
+                      {/* 썸네일 영역 - 전체 너비 */}
+                      <div className="w-full aspect-square bg-muted overflow-hidden relative">
+                        {uploadedFile.previewUrl ? (
+                          <img
+                            src={uploadedFile.previewUrl}
+                            alt={uploadedFile.file.name}
+                            className="w-full h-full object-cover"
+                            style={{ imageRendering: 'auto' }}
+                            loading="lazy"
+                          />
+                        ) : uploadedFile.type === "model" ? (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
+                            <div className="text-center">
+                              <div className="text-3xl mb-1">📦</div>
+                              <p className="text-[10px] text-muted-foreground font-medium">3D</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* 파일 정보 영역 */}
+                      <div className="p-3 space-y-1">
+                        <p className="text-xs font-medium truncate leading-tight">{uploadedFile.file.name}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {(uploadedFile.file.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                      
+                      {/* 삭제 버튼 - 우상단 */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="absolute top-2 right-2 h-7 w-7 p-0 bg-background/80 hover:bg-background backdrop-blur-sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFileRemove(uploadedFile.id, uploadedFile.previewUrl);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1980,70 +2059,6 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               )}
               </div>
             )}
-
-            {/* 생성된 에셋 (드래그 가능) */}
-          <div className="p-4 border-b">
-            <h3 className="text-sm font-semibold mb-3">생성된 에셋</h3>
-            {generatedModels.length > 0 ? (
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                {generatedModels.map((model, index) => (
-                  <Card
-                    key={index}
-                    className={`min-w-[100px] flex-shrink-0 ${
-                      model.modelUrl && !model.isLoading ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"
-                    }`}
-                    draggable={!!model.modelUrl && !model.isLoading}
-                    onDragStart={(e) => handleDragStart(e, model)}
-                  >
-                    <div className="aspect-square bg-muted rounded-t-lg overflow-hidden relative">
-                      {model.modelUrl && !model.isLoading ? (
-                        <div className="w-full h-full">
-                          <ModelViewer src={model.modelUrl} alt="3D 모델" className="w-full h-full" />
-                        </div>
-                      ) : model.previewImageUrl && !model.isLoading ? (
-                        <img src={model.previewImageUrl} alt="미리보기" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-muted p-2">
-                          <Loader2 className="h-5 w-5 animate-spin text-primary mb-1" />
-                          {model.progress !== undefined && model.progress !== null && (
-                            <span className="text-[10px] font-medium">{model.progress}%</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div className="p-1.5">
-                      <p className="text-[10px] text-muted-foreground truncate">{model.prompt || "생성 중..."}</p>
-                      <div className="flex gap-0.5 mt-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-5 px-1.5 flex-1"
-                          onClick={() => handleAddToScene(model)}
-                          disabled={!model.modelUrl || model.isLoading}
-                        >
-                          <Plus className="h-2.5 w-2.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-5 px-1.5 flex-1"
-                          onClick={() => handleDownload(model)}
-                          disabled={!model.modelUrl || model.isLoading}
-                        >
-                          <Download className="h-2.5 w-2.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-4 text-muted-foreground text-xs">
-                <ImageIcon className="h-6 w-6 mx-auto mb-1 opacity-50" />
-                <p>생성된 모델이 없습니다</p>
-              </div>
-            )}
-            </div>
 
             {/* 추천 에셋 */}
           <div className="p-4">
