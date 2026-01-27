@@ -18,7 +18,8 @@ import { Unified3DScene } from "@/app/components/unified-3d-scene";
 import { TravelCard } from "@/app/components/ui/travel-card";
 import { Dialog, DialogContent, DialogOverlay } from "@/app/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/app/components/ui/tabs";
-import { projectApi, assetApi, partApi, ComponentRequest, ProjectRequest, PartType, PartCategory } from "@/lib/api";
+import { projectApi, assetApi, partApi, ComponentRequest, ProjectRequest, PartType, PartCategory, PartResponse } from "@/lib/api";
+import { generateThumbnailFromGLB } from "@/lib/thumbnail-generator";
 import {
   Select,
   SelectContent,
@@ -122,6 +123,30 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [webcamEnabled, setWebcamEnabled] = useState(false);
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [libraryParts, setLibraryParts] = useState<PartResponse[]>([]);
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+
+  // 라이브러리 파츠 가져오기
+  const fetchLibraryParts = useCallback(async () => {
+    setIsLoadingLibrary(true);
+    try {
+      // 모든 OBJECT 타입 파츠 가져오기
+      const parts = await partApi.getParts({ type: 'OBJECT' });
+      setLibraryParts(parts);
+    } catch (err) {
+      console.error("Failed to fetch library parts:", err);
+      toast.error("라이브러리 파츠를 불러오는데 실패했습니다.");
+    } finally {
+      setIsLoadingLibrary(false);
+    }
+  }, []);
+
+  // 다이얼로그가 열릴 때 데이터 로드
+  useEffect(() => {
+    if (isSearchDialogOpen) {
+      fetchLibraryParts();
+    }
+  }, [isSearchDialogOpen, fetchLibraryParts]);
 
   // 파츠 업로드 다이얼로그 관련 상태
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
@@ -1187,7 +1212,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   };
 
   // 파츠 업로드 확정 핸들러 (백그라운드 처리)
-  const handleConfirmUpload = () => {
+  const handleConfirmUpload = async () => {
     if (!uploadFileData) return;
 
     const uploadId = `upload-${Date.now()}`;
@@ -1228,56 +1253,66 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
     toast.info(`"${currentUploadData.name}" 업로드를 시작합니다.`);
 
-    // 4. 백그라운드에서 실제 업로드 수행
-    partApi.uploadPart(
-      currentUploadData.name,
-      currentUploadData.type,
-      currentUploadData.category,
-      currentUploadData.file,
-      (progress) => {
-        setPendingUploads(prev => prev.map(u =>
-          u.id === uploadId ? {
-            ...u,
-            progress,
-            status: progress === 100 ? 'processing' : 'uploading'
-          } : u
+    // 4. 썸네일 생성 및 백그라운드 업로드 수행
+    (async () => {
+      try {
+        // 썸네일 생성
+        toast.info('썸네일 생성 중...');
+        const thumbnailFile = await generateThumbnailFromGLB(currentUploadData.file);
+
+        // partApi.uploadPart를 사용하여 GLB와 썸네일 함께 업로드
+        const partId = await partApi.uploadPart(
+          currentUploadData.name,
+          currentUploadData.type,
+          currentUploadData.category,
+          currentUploadData.file,
+          thumbnailFile, // 썸네일 파일 포함
+          (progress) => {
+            setPendingUploads(prev => prev.map(u =>
+              u.id === uploadId ? {
+                ...u,
+                progress,
+                status: progress === 100 ? 'processing' : 'uploading'
+              } : u
+            ));
+          }
+        );
+
+        // 성공 시: 목록 정보 업데이트 및 씬 동기화
+        setUploadedFiles(prev => prev.map(f =>
+          f.id === fileId ? { ...f, partId, isRegistered: true, isPending: false } : f
         ));
+
+        // 씬에 이미 배치된 모델이 있다면 partId 동기화
+        setSceneModels(prev => prev.map(m =>
+          m.id === fileId ? { ...m, partId } : m
+        ));
+
+        // 펜딩 상태 완료 처리 후 3초 뒤에 제거
+        setPendingUploads(prev => prev.map(u =>
+          u.id === uploadId ? { ...u, progress: 100, status: 'completed' } : u
+        ));
+
+        setTimeout(() => {
+          setPendingUploads(prev => prev.filter(u => u.id !== uploadId));
+        }, 3000);
+
+        toast.success(`"${currentUploadData.name}" 등록 완료!`);
+      } catch (error) {
+        console.error('Background part upload failed:', error);
+
+        // 실패 시: 목록에서 Pending 상태 해제 (필요시 삭제 처리도 가능)
+        setUploadedFiles(prev => prev.map(f =>
+          f.id === fileId ? { ...f, isPending: false } : f
+        ));
+
+        setPendingUploads(prev => prev.map(u =>
+          u.id === uploadId ? { ...u, status: 'error' } : u
+        ));
+
+        toast.error(`"${currentUploadData.name}" 등록 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
       }
-    ).then(partId => {
-      // 성공 시: 목록 정보 업데이트 및 씬 동기화
-      setUploadedFiles(prev => prev.map(f =>
-        f.id === fileId ? { ...f, partId, isRegistered: true, isPending: false } : f
-      ));
-
-      // 씬에 이미 배치된 모델이 있다면 partId 동기화
-      setSceneModels(prev => prev.map(m =>
-        m.id === fileId ? { ...m, partId } : m
-      ));
-
-      // 펜딩 상태 완료 처리 후 3초 뒤에 제거
-      setPendingUploads(prev => prev.map(u =>
-        u.id === uploadId ? { ...u, progress: 100, status: 'completed' } : u
-      ));
-
-      setTimeout(() => {
-        setPendingUploads(prev => prev.filter(u => u.id !== uploadId));
-      }, 3000);
-
-      toast.success(`"${currentUploadData.name}" 등록 완료!`);
-    }).catch(error => {
-      console.error('Background part upload failed:', error);
-
-      // 실패 시: 목록에서 Pending 상태 해제 (필요시 삭제 처리도 가능)
-      setUploadedFiles(prev => prev.map(f =>
-        f.id === fileId ? { ...f, isPending: false } : f
-      ));
-
-      setPendingUploads(prev => prev.map(u =>
-        u.id === uploadId ? { ...u, status: 'error' } : u
-      ));
-
-      toast.error(`"${currentUploadData.name}" 등록 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
-    });
+    })();
   };
 
   // 파일 삭제 핸들러
@@ -1746,8 +1781,8 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               </label>
               <div
                 className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${isDraggingFile
-                    ? "border-primary bg-primary/10"
-                    : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                  ? "border-primary bg-primary/10"
+                  : "border-muted-foreground/25 hover:border-muted-foreground/50"
                   }`}
                 onDragOver={handleFileDragOver}
                 onDragLeave={handleFileDragLeave}
@@ -1942,73 +1977,6 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 </Button>
               </div>
             )}
-            {/* 백그라운드 업로드 상태 알림 (진행 중인 것만 표시) - Canvas 왼쪽 아래 큐 */}
-            <div className="absolute bottom-6 left-6 z-40 flex flex-col-reverse gap-3 max-w-[320px] pointer-events-none">
-              {pendingUploads.map(upload => (
-                <div
-                  key={upload.id}
-                  className={`pointer-events-auto p-3 border rounded-xl shadow-2xl transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 
-                    ${upload.status === 'error' ? 'bg-red-50/95 border-red-200' :
-                      upload.status === 'completed' ? 'bg-green-50/95 border-green-200' :
-                        'bg-white/95 backdrop-blur-md border-primary/20'}`}
-                >
-                  <div className="flex gap-3 items-center">
-                    <div className="w-10 h-10 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border shadow-inner">
-                      {upload.previewUrl ? (
-                        <img src={upload.previewUrl} className="w-full h-full object-cover" alt="" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs">📦</div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-center mb-1.5">
-                        <p className="text-[11px] font-black truncate pr-2 text-slate-900 tracking-tight">
-                          {upload.name}
-                        </p>
-                        <span className={`text-[10px] font-black tabular-nums ${upload.status === 'error' ? 'text-red-500' :
-                          upload.status === 'completed' ? 'text-green-600' : 'text-primary'
-                          }`}>
-                          {upload.status === 'error' ? 'ERR' : `${upload.progress}%`}
-                        </span>
-                      </div>
-
-                      {upload.status !== 'error' ? (
-                        <Progress
-                          value={upload.progress}
-                          className={`h-1.5 ${upload.status === 'processing' ? 'animate-pulse' : ''}`}
-                        />
-                      ) : (
-                        <div className="h-1.5 bg-red-200 rounded-full w-full" />
-                      )}
-
-                      <div className="flex items-center gap-1.5 mt-2">
-                        {upload.status === 'uploading' && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
-                        {upload.status === 'processing' && <Loader2 className="h-3 w-3 animate-spin text-amber-500" />}
-                        {upload.status === 'completed' && <CheckCircle2 className="h-3 w-3 text-green-500" />}
-                        {upload.status === 'error' && <XCircle className="h-3 w-3 text-red-500" />}
-
-                        <p className={`text-[10px] font-bold tracking-tight uppercase ${upload.status === 'error' ? 'text-red-500' :
-                          upload.status === 'completed' ? 'text-green-600' : 'text-slate-600'
-                          }`}>
-                          {upload.status === 'uploading' ? 'Syncing...' :
-                            upload.status === 'processing' ? 'Processing...' :
-                              upload.status === 'error' ? 'Failed' : 'Success'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {upload.status === 'error' && (
-                      <button
-                        onClick={() => setPendingUploads(prev => prev.filter(u => u.id !== upload.id))}
-                        className="p-1 hover:bg-red-100 rounded-full text-red-500 ml-1"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         )}
       </div>
@@ -2381,92 +2349,100 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               />
             </div>
 
-            {/* 필터 탭 */}
-            <Tabs defaultValue="components" className="w-full">
-              <TabsList className="w-full justify-start h-auto p-1">
-                <TabsTrigger value="components">Components</TabsTrigger>
-                <TabsTrigger value="featured">Featured</TabsTrigger>
-                <TabsTrigger value="newest">Newest</TabsTrigger>
-                <TabsTrigger value="bookmarks">Bookmarks</TabsTrigger>
-              </TabsList>
-
-              {/* 네비게이션 옵션 */}
-              <div className="flex gap-4 mt-4 text-sm text-muted-foreground">
-                <button className="hover:text-foreground transition-colors">Screens</button>
-                <button className="hover:text-foreground transition-colors">Recent projects</button>
-                <button className="hover:text-foreground transition-colors">Themes</button>
+            {/* 부품 목록 그리드 */}
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">
+                  부품 라이브러리 {searchQuery ? `("${searchQuery}" 검색 결과)` : ""}
+                </h3>
+                <Badge variant="secondary" className="px-2 py-0.5 text-xs">
+                  {libraryParts.filter(part =>
+                    part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    part.category?.toLowerCase().includes(searchQuery.toLowerCase())
+                  ).length} 개의 부품
+                </Badge>
               </div>
 
-              {/* 아이콘 그리드 */}
-              <div className="grid grid-cols-6 gap-4 mt-6">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <div
-                    key={i}
-                    className="aspect-square rounded-xl border bg-gray-50 transition-all cursor-pointer flex items-center justify-center hover:scale-105 hover:bg-gray-100"
-                  >
-                    <div className="text-2xl">🎨</div>
+              {isLoadingLibrary ? (
+                <div className="flex-1 flex flex-col items-center justify-center py-20">
+                  <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+                  <p className="text-muted-foreground animate-pulse">부품을 불러오는 중...</p>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto pr-2">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {libraryParts
+                      .filter(part =>
+                        part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        part.category?.toLowerCase().includes(searchQuery.toLowerCase())
+                      )
+                      .map((part) => {
+                        const imageUrl = part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
+
+                        return (
+                          <div
+                            key={part.id}
+                            className="group relative"
+                            draggable={true}
+                            onDragStart={(e) => handleDragStart(e, {
+                              partId: part.id,
+                              modelUrl: part.modelFileUrl,
+                              name: part.name,
+                              thumbnail: part.thumbnailUrl,
+                              category: part.category,
+                            })}
+                          >
+                            <TravelCard
+                              imageUrl={imageUrl}
+                              imageAlt={part.name}
+                              title={part.name}
+                              location={part.category || "3D Model"}
+                              overview={part.description || `A 3D ${part.name} model.`}
+                              onBookNow={() => {
+                                if (part.modelFileUrl) {
+                                  const offset = sceneModels.length * 0.5;
+                                  const newModel: SceneModel = {
+                                    id: `library-${part.id}-${Date.now()}`,
+                                    partId: part.id,
+                                    modelUrl: part.modelFileUrl,
+                                    name: part.name,
+                                    position: { x: offset, y: 0, z: offset },
+                                    rotation: { x: 0, y: 0, z: 0 },
+                                    scale: 1,
+                                    visible: true,
+                                    locked: false,
+                                  };
+                                  setSceneModels((prev) => [...prev, newModel]);
+                                  setSelectedModelIds([newModel.id]);
+                                  toast.success(`${part.name}이(가) 씬에 추가되었습니다.`);
+                                }
+                              }}
+                              className="h-[220px]"
+                            />
+                            {/* Hover 시 나타나는 뱃지 */}
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                              <Badge className="bg-primary/90 text-[10px] font-bold">
+                                {part.type}
+                              </Badge>
+                            </div>
+                          </div>
+                        );
+                      })}
                   </div>
-                ))}
-              </div>
 
-              {/* Featured 섹션 */}
-              <TabsContent value="components" className="mt-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Featured</h3>
-                  <div className="grid grid-cols-3 gap-4">
-                    {[
-                      { title: "Heroes", description: "Build faster with beautiful compone" },
-                      { title: "Backgrounds", description: "Background lights" },
-                      { title: "Features", description: "Feature components" },
-                      { title: "Announcements", description: "Announcement components" },
-                    ].map((item, index) => (
-                      <Card
-                        key={index}
-                        className="p-4 transition-all cursor-pointer border bg-gray-50 rounded-xl hover:scale-[1.02] hover:bg-gray-100"
-                      >
-                        <h4 className="font-semibold mb-2">{item.title}</h4>
-                        <p className="text-sm text-muted-foreground">{item.description}</p>
-                      </Card>
-                    ))}
-                  </div>
+                  {libraryParts.filter(part =>
+                    part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    part.category?.toLowerCase().includes(searchQuery.toLowerCase())
+                  ).length === 0 && !isLoadingLibrary && (
+                      <div className="text-center py-20 border-2 border-dashed rounded-2xl">
+                        <Search className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-20" />
+                        <h3 className="text-lg font-medium text-muted-foreground">검색 결과가 없습니다</h3>
+                        <p className="text-sm text-muted-foreground mt-1">다른 검색어를 입력해 보세요.</p>
+                      </div>
+                    )}
                 </div>
-              </TabsContent>
-
-              <TabsContent value="featured" className="mt-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Featured Components</h3>
-                  <div className="grid grid-cols-3 gap-4">
-                    {[
-                      { title: "Heroes", description: "Build faster with beautiful compone" },
-                      { title: "Backgrounds", description: "Background lights" },
-                      { title: "Features", description: "Feature components" },
-                    ].map((item, index) => (
-                      <Card
-                        key={index}
-                        className="p-4 transition-all cursor-pointer border bg-gray-50 rounded-xl hover:scale-[1.02] hover:bg-gray-100"
-                      >
-                        <h4 className="font-semibold mb-2">{item.title}</h4>
-                        <p className="text-sm text-muted-foreground">{item.description}</p>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="newest" className="mt-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Newest Components</h3>
-                  <p className="text-sm text-muted-foreground">최신 컴포넌트가 여기에 표시됩니다.</p>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="bookmarks" className="mt-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Bookmarks</h3>
-                  <p className="text-sm text-muted-foreground">북마크한 컴포넌트가 여기에 표시됩니다.</p>
-                </div>
-              </TabsContent>
-            </Tabs>
+              )}
+            </div>
 
             {/* 하단 링크 */}
             <div className="flex gap-4 pt-4 border-t text-sm text-muted-foreground">

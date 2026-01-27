@@ -1,0 +1,942 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+        "title": "OpenAPI definition",
+        "version": "v0"
+    },
+    "servers": [
+        {
+            "url": "https://f76640308ac2.ngrok-free.app",
+            "description": "Generated server url"
+        }
+    ],
+    "tags": [
+        {
+            "name": "User",
+            "description": "User management APIs"
+        },
+        {
+            "name": "Project",
+            "description": "Project management APIs"
+        },
+        {
+            "name": "Part",
+            "description": "Asset management APIs"
+        },
+        {
+            "name": "Authentication",
+            "description": "Auth APIs for login and signup"
+        }
+    ],
+    "paths": {
+        "/api/projects": {
+            "get": {
+                "tags": [
+                    "Project"
+                ],
+                "summary": "List Public Projects",
+                "description": "Fetches a list of public projects sorted by latest, likes, views, or comments, and filtered by time range.",
+                "operationId": "getPublicProjects",
+                "parameters": [
+                    {
+                        "name": "sort",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "latest"
+                        }
+                    },
+                    {
+                        "name": "timeRange",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/ProjectResponseDTO"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Project"
+                ],
+                "summary": "Save or Update Project",
+                "description": "Creates a new project or updates an existing one with its components.",
+                "operationId": "saveProject",
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "projectId",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ProjectRequestDTO"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{projectId}/like": {
+            "post": {
+                "tags": [
+                    "Project"
+                ],
+                "summary": "Like Project",
+                "description": "Increases the like count of a project.",
+                "operationId": "likeProject",
+                "parameters": [
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/api/projects/{projectId}/comment": {
+            "post": {
+                "tags": [
+                    "Project"
+                ],
+                "summary": "Increment Comment Count",
+                "description": "Increases the comment count of a project.",
+                "operationId": "commentProject",
+                "parameters": [
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/api/parts": {
+            "get": {
+                "tags": [
+                    "Part"
+                ],
+                "summary": "List Parts",
+                "description": "Fetches a list of parts filtered by type, category, time range, and AI-generated flag.",
+                "operationId": "getParts",
+                "parameters": [
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "BACKGROUND",
+                                "OBJECT"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "category",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "ANIMALS_PETS",
+                                "ARCHITECTURE",
+                                "ART_ABSTRACT",
+                                "CARS_VEHICLES",
+                                "CHARACTERS_CREATURES",
+                                "CULTURAL_HERITAGE_HISTORY",
+                                "ELECTRONICS_GADGETS",
+                                "FASHION_STYLE",
+                                "FOOD_DRINK",
+                                "FURNITURE_HOME",
+                                "MUSIC",
+                                "NATURE_PLANTS",
+                                "NEWS_POLITICS",
+                                "PEOPLE",
+                                "PLACES_TRAVEL",
+                                "SCIENCE_TECHNOLOGY",
+                                "SPORTS_FITNESS",
+                                "WEAPONS_MILITARY"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "sort",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "latest"
+                        }
+                    },
+                    {
+                        "name": "timeRange",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "isAiGenerated",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/PartResponseDTO"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Part"
+                ],
+                "summary": "Upload Part",
+                "description": "Uploads a 3D model file with optional thumbnail and registers it as a Part.",
+                "operationId": "uploadPart",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "BACKGROUND",
+                                "OBJECT"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "category",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "ANIMALS_PETS",
+                                "ARCHITECTURE",
+                                "ART_ABSTRACT",
+                                "CARS_VEHICLES",
+                                "CHARACTERS_CREATURES",
+                                "CULTURAL_HERITAGE_HISTORY",
+                                "ELECTRONICS_GADGETS",
+                                "FASHION_STYLE",
+                                "FOOD_DRINK",
+                                "FURNITURE_HOME",
+                                "MUSIC",
+                                "NATURE_PLANTS",
+                                "NEWS_POLITICS",
+                                "PEOPLE",
+                                "PLACES_TRAVEL",
+                                "SCIENCE_TECHNOLOGY",
+                                "SPORTS_FITNESS",
+                                "WEAPONS_MILITARY"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "isAiGenerated",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "required": [
+                                    "modelFile"
+                                ],
+                                "type": "object",
+                                "properties": {
+                                    "modelFile": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    },
+                                    "thumbnailFile": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/parts/{partId}/like": {
+            "post": {
+                "tags": [
+                    "Part"
+                ],
+                "summary": "Like Part",
+                "description": "Increases the like count of a part.",
+                "operationId": "likePart",
+                "parameters": [
+                    {
+                        "name": "partId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/api/auth/signup": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Sign up",
+                "description": "Register a new user with email, password, and nickname.",
+                "operationId": "signUp",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SignupRequestDTO"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    }
+                }
+            }
+        },
+        "/api/auth/login": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Login",
+                "description": "Authenticate user and return a JWT access token.",
+                "operationId": "login",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequestDTO"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TokenResponseDTO"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{userId}/settings": {
+            "patch": {
+                "tags": [
+                    "User"
+                ],
+                "summary": "Update User Settings",
+                "description": "Updates JSON-based user settings (hand sensitivity, camera, etc.)",
+                "operationId": "updateUserSettings",
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UserSettings"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/api/users/{userId}": {
+            "get": {
+                "tags": [
+                    "User"
+                ],
+                "summary": "Get User Profile",
+                "description": "Fetches basic profile information including nickname and settings.",
+                "operationId": "getUserProfile",
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserResponseDTO"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/projects/{projectId}": {
+            "get": {
+                "tags": [
+                    "Project"
+                ],
+                "summary": "Get Project Detail",
+                "description": "Fetches a project's metadata and all its components.",
+                "operationId": "getProjectDetail",
+                "parameters": [
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectResponseDTO"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/health": {
+            "get": {
+                "tags": [
+                    "health-controller"
+                ],
+                "operationId": "health",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "ComponentRequestDTO": {
+                "required": [
+                    "partId"
+                ],
+                "type": "object",
+                "properties": {
+                    "partId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "posX": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "posY": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "posZ": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "rotX": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "rotY": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "rotZ": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "scaleX": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "scaleY": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "scaleZ": {
+                        "type": "number",
+                        "format": "double"
+                    }
+                }
+            },
+            "ProjectRequestDTO": {
+                "required": [
+                    "title"
+                ],
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "backgroundPartId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "isPublic": {
+                        "type": "boolean"
+                    },
+                    "previewImageUrl": {
+                        "type": "string"
+                    },
+                    "components": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ComponentRequestDTO"
+                        }
+                    }
+                }
+            },
+            "SignupRequestDTO": {
+                "required": [
+                    "email",
+                    "nickname",
+                    "password"
+                ],
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string"
+                    },
+                    "password": {
+                        "type": "string"
+                    },
+                    "nickname": {
+                        "type": "string"
+                    }
+                }
+            },
+            "LoginRequestDTO": {
+                "required": [
+                    "email",
+                    "password"
+                ],
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string"
+                    },
+                    "password": {
+                        "type": "string"
+                    }
+                }
+            },
+            "TokenResponseDTO": {
+                "type": "object",
+                "properties": {
+                    "accessToken": {
+                        "type": "string"
+                    },
+                    "tokenType": {
+                        "type": "string"
+                    }
+                }
+            },
+            "UserSettings": {
+                "type": "object",
+                "properties": {
+                    "handSensitivity": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "cameraResolution": {
+                        "type": "string"
+                    },
+                    "uiTheme": {
+                        "type": "string"
+                    },
+                    "leftHanded": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "UserResponseDTO": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "nickname": {
+                        "type": "string"
+                    },
+                    "userSettings": {
+                        "$ref": "#/components/schemas/UserSettings"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "ComponentResponseDTO": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "partId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "partName": {
+                        "type": "string"
+                    },
+                    "posX": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "posY": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "posZ": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "rotX": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "rotY": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "rotZ": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "scaleX": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "scaleY": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "scaleZ": {
+                        "type": "number",
+                        "format": "double"
+                    }
+                }
+            },
+            "ProjectResponseDTO": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "nickname": {
+                        "type": "string"
+                    },
+                    "backgroundPartId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "backgroundPartName": {
+                        "type": "string"
+                    },
+                    "isPublic": {
+                        "type": "boolean"
+                    },
+                    "previewImageUrl": {
+                        "type": "string"
+                    },
+                    "likesCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "viewsCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "commentCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "components": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ComponentResponseDTO"
+                        }
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "PartResponseDTO": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "BACKGROUND",
+                            "OBJECT"
+                        ]
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "ANIMALS_PETS",
+                            "ARCHITECTURE",
+                            "ART_ABSTRACT",
+                            "CARS_VEHICLES",
+                            "CHARACTERS_CREATURES",
+                            "CULTURAL_HERITAGE_HISTORY",
+                            "ELECTRONICS_GADGETS",
+                            "FASHION_STYLE",
+                            "FOOD_DRINK",
+                            "FURNITURE_HOME",
+                            "MUSIC",
+                            "NATURE_PLANTS",
+                            "NEWS_POLITICS",
+                            "PEOPLE",
+                            "PLACES_TRAVEL",
+                            "SCIENCE_TECHNOLOGY",
+                            "SPORTS_FITNESS",
+                            "WEAPONS_MILITARY"
+                        ]
+                    },
+                    "thumbnailUrl": {
+                        "type": "string"
+                    },
+                    "modelFileUrl": {
+                        "type": "string"
+                    },
+                    "isPublic": {
+                        "type": "boolean"
+                    },
+                    "isAiGenerated": {
+                        "type": "boolean"
+                    },
+                    "creatorNickname": {
+                        "type": "string"
+                    },
+                    "likesCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "viewsCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "commentCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            }
+        }
+    }
+}

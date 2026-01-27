@@ -364,10 +364,14 @@ export const partApi = {
     type: PartType,
     category: PartCategory,
     modelFile: File,
+    thumbnailFile?: File,
     onProgress?: (progress: number) => void
   ): Promise<number> => {
     const formData = new FormData();
     formData.append('modelFile', modelFile);
+    if (thumbnailFile) {
+      formData.append('thumbnailFile', thumbnailFile);
+    }
 
     const queryParams = new URLSearchParams();
     queryParams.append('name', name);
