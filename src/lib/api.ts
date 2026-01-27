@@ -417,3 +417,106 @@ export const healthApi = {
     return apiCall<Record<string, string>>('/api/health');
   },
 };
+
+// GLB File Transfer APIs
+export const transferApi = {
+  // GLB 파일 업로드 (전송 상태)
+  uploadGLB: async (glbFile: File, sessionId?: string): Promise<{ fileId: string; url: string }> => {
+    const formData = new FormData();
+    formData.append('glbFile', glbFile);
+    if (sessionId) {
+      formData.append('sessionId', sessionId);
+    }
+
+    const token = getAuthToken();
+    const headers: HeadersInit = {
+      'ngrok-skip-browser-warning': 'true',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/transfer/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      let errorText = '';
+      try {
+        errorText = await response.text();
+      } catch (e) {
+        errorText = `HTTP ${response.status} Error`;
+      }
+      
+      // 503 오류는 서버/ngrok 문제
+      if (response.status === 503) {
+        throw new Error(`서버 연결 오류 (503): 서버가 응답하지 않습니다. ngrok 연결을 확인하거나 잠시 후 다시 시도하세요.`);
+      }
+      
+      throw new Error(`Upload Error: ${response.status} - ${errorText.substring(0, 200)}`);
+    }
+
+    return response.json();
+  },
+
+  // GLB 파일 다운로드 (수신 상태)
+  // 서버가 302 리다이렉트를 반환하므로 리다이렉트를 따라가서 파일 다운로드
+  downloadGLB: async (fileId: string): Promise<Blob> => {
+    const token = getAuthToken();
+    const headers: HeadersInit = {
+      'ngrok-skip-browser-warning': 'true',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // 리다이렉트를 따라가도록 fetch 옵션 설정
+    const response = await fetch(`${API_BASE_URL}/api/transfer/download/${fileId}`, {
+      method: 'GET',
+      headers,
+      redirect: 'follow', // 리다이렉트 자동 따라가기
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('File not found');
+      }
+      const errorText = await response.text();
+      throw new Error(`Download Error: ${response.status} - ${errorText}`);
+    }
+
+    return response.blob();
+  },
+
+  // 최신 GLB 파일 ID 가져오기 (수신 상태에서 사용)
+  getLatestFileId: async (): Promise<string | null> => {
+    const token = getAuthToken();
+    const headers: HeadersInit = {
+      'ngrok-skip-browser-warning': 'true',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/transfer/latest`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null; // 아직 업로드된 파일이 없음
+      }
+      const errorText = await response.text();
+      throw new Error(`Get Latest Error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.fileId || null;
+  },
+};

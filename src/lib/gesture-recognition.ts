@@ -103,3 +103,52 @@ export function isFist(landmarks: Landmark[]): boolean {
   
   return thumbDown && indexDown && middleDown && ringDown && pinkyDown;
 }
+
+// Check if hand is in grab gesture (all fingers closed, more strict than fist)
+// 히스테리시스를 사용하여 더 안정적인 감지
+let lastGrabState = false;
+let grabConfidence = 0;
+
+export function isGrab(landmarks: Landmark[]): boolean {
+  if (landmarks.length < 21) {
+    lastGrabState = false;
+    grabConfidence = 0;
+    return false;
+  }
+  
+  const wrist = landmarks[0];
+  
+  // 각 손가락이 손목에 가까운지 확인 (isFist와 유사하지만 더 엄격)
+  const thumbDown = dist(landmarks[4], wrist) < dist(landmarks[3], wrist);
+  const indexDown = dist(landmarks[8], wrist) < dist(landmarks[6], wrist);
+  const middleDown = dist(landmarks[12], wrist) < dist(landmarks[10], wrist);
+  const ringDown = dist(landmarks[16], wrist) < dist(landmarks[14], wrist);
+  const pinkyDown = dist(landmarks[20], wrist) < dist(landmarks[18], wrist);
+  
+  const isGrabDetected = thumbDown && indexDown && middleDown && ringDown && pinkyDown;
+  
+  // 히스테리시스 적용 (더 빠른 반응을 위해 confidence 임계값 낮춤)
+  if (lastGrabState) {
+    if (!isGrabDetected) {
+      grabConfidence = Math.max(0, grabConfidence - 0.2);
+      if (grabConfidence <= 0) {
+        lastGrabState = false;
+        console.log('[Grab] 그랩 해제됨');
+      }
+    } else {
+      grabConfidence = Math.min(1.0, grabConfidence + 0.3);
+    }
+  } else {
+    if (isGrabDetected) {
+      grabConfidence = Math.min(1.0, grabConfidence + 0.3);
+      if (grabConfidence >= 0.6) { // 0.8에서 0.6으로 낮춤
+        lastGrabState = true;
+        console.log('[Grab] 그랩 감지됨, confidence:', grabConfidence.toFixed(2));
+      }
+    } else {
+      grabConfidence = Math.max(0, grabConfidence - 0.2);
+    }
+  }
+  
+  return lastGrabState;
+}

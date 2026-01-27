@@ -95,6 +95,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [dioramaName, setDioramaName] = useState("새 디오라마");
   const [savedDioramas, setSavedDioramas] = useState<Diorama[]>([]);
   const [webcamEnabled, setWebcamEnabled] = useState(false);
+  const [transferMode, setTransferMode] = useState<'send' | 'receive'>('send');
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -1768,6 +1769,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               onModelRotate={handleModelRotationUpdate}
               onModelScale={handleModelScaleUpdate}
               webcamEnabled={webcamEnabled}
+              transferMode={transferMode}
+              onTransferStateChange={(state) => {
+                if (state === 'sending') {
+                  toast.info('GLB 파일 전송 중...');
+                } else if (state === 'receiving') {
+                  toast.info('GLB 파일 수신 중...');
+                }
+              }}
             />
             {/* 선택된 모델 삭제 버튼 */}
             {selectedModelId && (
@@ -1959,6 +1968,36 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                   <Camera className={`h-4 w-4 mr-2 ${webcamEnabled ? 'text-white' : ''}`} />
                   {webcamEnabled ? '모션 제어 ON' : '모션 제어 OFF'}
                 </Button>
+
+                {/* Transfer Mode Toggle (전송/수신 모드 전환) */}
+                {webcamEnabled && (
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant={transferMode === "send" ? "default" : "outline"}
+                      className="flex-1 h-8"
+                      onClick={() => {
+                        setTransferMode("send");
+                        toast.info("전송 모드: 손바닥 → 그랩 2초로 GLB 파일을 서버로 전송합니다");
+                      }}
+                    >
+                      <Upload className="h-3 w-3 mr-1" />
+                      전송
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={transferMode === "receive" ? "default" : "outline"}
+                      className="flex-1 h-8"
+                      onClick={() => {
+                        setTransferMode("receive");
+                        toast.info("수신 모드: 손바닥 → 그랩 2초로 서버에서 GLB 파일을 수신합니다");
+                      }}
+                    >
+                      <Download className="h-3 w-3 mr-1" />
+                      수신
+                    </Button>
+                  </div>
+                )}
                 
                 <div className="flex gap-1">
                 <Button

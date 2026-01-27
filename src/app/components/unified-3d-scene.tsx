@@ -1,9 +1,10 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { HandGestureController } from '@/lib/hand-gesture-control';
-import { isPinching, isSpiderman, Landmark, WorldLandmark } from '@/lib/gesture-recognition';
+import { isPinching, isSpiderman, isOpenPalm, isGrab, Landmark, WorldLandmark } from '@/lib/gesture-recognition';
 import { toast } from 'sonner';
 import { Hands } from '@mediapipe/hands';
 import { Camera } from '@mediapipe/camera_utils';
+import { transferApi } from '@/lib/api';
 
 interface Unified3DSceneProps {
   models: Array<{
@@ -22,6 +23,8 @@ interface Unified3DSceneProps {
   onModelRotate?: (modelId: string, rotation: { x: number; y: number; z: number }) => void;
   onModelScale?: (modelId: string, scale: number) => void;
   webcamEnabled?: boolean;
+  onTransferStateChange?: (state: 'idle' | 'sending' | 'receiving') => void;
+  transferMode?: 'send' | 'receive';
 }
 
 export function Unified3DScene({
@@ -33,6 +36,8 @@ export function Unified3DScene({
   onModelRotate,
   onModelScale,
   webcamEnabled = false,
+  onTransferStateChange,
+  transferMode = 'send',
 }: Unified3DSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<any>(null);
@@ -54,6 +59,15 @@ export function Unified3DScene({
   const targetPositionRef = useRef<{ x: number; y: number; z: number } | null>(null);
   const targetRotationRef = useRef<{ x: number; y: number } | null>(null);
   const targetScaleRef = useRef<number | null>(null);
+  
+  // 그랩 제스처 감지 및 전송/수신 상태 관리
+  const grabTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const grabStartTimeRef = useRef<number | null>(null);
+  const wasOpenPalmRef = useRef<boolean>(false);
+  const transferStateRef = useRef<'idle' | 'sending' | 'receiving'>('idle');
+  const lastCheckedFileIdRef = useRef<string | null>(null);
+  const lastLogTimeRef = useRef<{ [key: string]: number }>({});
+  const lastToastTimeRef = useRef<{ [key: string]: number }>({});
 
   // 콜백을 ref에 저장하여 항상 최신 값 참조
   const callbacksRef = useRef({
@@ -736,23 +750,20 @@ export function Unified3DScene({
             console.warn('[Hand Gesture] Gesture controller not available');
             return;
           }
-          
-          if (!selectedModelId) {
-            // No model selected, skip processing
-            return;
-          }
 
           const { multiHandLandmarks, multiHandWorldLandmarks } = results;
           if (!multiHandLandmarks || multiHandLandmarks.length === 0) {
             targetPositionRef.current = null;
             targetRotationRef.current = null;
             targetScaleRef.current = null;
+            // 손이 감지되지 않으면 그랩 상태도 리셋
+            wasOpenPalmRef.current = false;
+            grabStartTimeRef.current = null;
             return;
           }
 
-          // 디버그 로그 제거 (성능 개선)
-
-          // Convert landmarks to our format
+          // 그랩 제스처는 selectedModelId 없이도 작동해야 함
+          // 먼저 그랩/손바닥 감지
           const convertLandmarks = (landmarks: any[]): Landmark[] => {
             return landmarks.map((lm: any) => ({
               x: lm.x,
@@ -760,6 +771,30 @@ export function Unified3DScene({
               z: lm.z || 0,
             }));
           };
+
+          let grabHand: Landmark[] | null = null;
+          let openPalmHand: Landmark[] | null = null;
+
+          multiHandLandmarks.forEach((landmarks: any[]) => {
+            const converted = convertLandmarks(landmarks);
+            const isGrabDetected = isGrab(converted);
+            const isOpenPalmDetected = isOpenPalm(converted);
+            
+            if (isGrabDetected) {
+              grabHand = converted;
+            }
+            if (isOpenPalmDetected) {
+              openPalmHand = converted;
+            }
+          });
+
+          // 그랩 제스처 처리 (selectedModelId와 무관하게)
+          handleGrabGesture(grabHand, openPalmHand);
+
+          // selectedModelId가 없으면 다른 제스처는 처리하지 않음
+          if (!selectedModelId) {
+            return;
+          }
 
           const convertWorldLandmarks = (landmarks: any[]): WorldLandmark[] => {
             return landmarks.map((lm: any) => ({
@@ -770,7 +805,7 @@ export function Unified3DScene({
           };
 
           // Priority: Double Pinch (scaling) > Single Pinch (movement) > Spider-Man (rotation)
-          // 핀치가 감지되면 로테이트는 무시 (명확한 상태 분리)
+          // 핀치가 감지되면 로테이트는 무시 (그랩은 이미 처리됨)
           const pinchingHands: Landmark[][] = [];
           const worldPinchingHands: WorldLandmark[][] = [];
           let rotationHand: Landmark[] | null = null;
@@ -852,6 +887,349 @@ export function Unified3DScene({
             targetScaleRef.current = null;
           }
         });
+
+        // 그랩 제스처 처리 함수
+        const handleGrabGesture = (grabHand: Landmark[] | null, openPalmHand: Landmark[] | null) => {
+          const now = Date.now();
+          
+          // 손바닥을 펴고 있는 상태 감지
+          if (openPalmHand) {
+            if (!wasOpenPalmRef.current) {
+              // 로그 중복 방지: 1초에 한 번만
+              if (!lastLogTimeRef.current['openPalm'] || now - lastLogTimeRef.current['openPalm'] > 1000) {
+                console.log('[Transfer] 손바닥 감지됨');
+                lastLogTimeRef.current['openPalm'] = now;
+              }
+            }
+            wasOpenPalmRef.current = true;
+            // 그랩 타이머 리셋
+            if (grabTimerRef.current) {
+              clearTimeout(grabTimerRef.current);
+              grabTimerRef.current = null;
+            }
+            grabStartTimeRef.current = null;
+            if (transferStateRef.current !== 'idle' && transferStateRef.current !== 'sending' && transferStateRef.current !== 'receiving') {
+              transferStateRef.current = 'idle';
+              if (onTransferStateChange) {
+                onTransferStateChange('idle');
+              }
+            }
+            return;
+          }
+
+          // 전송/수신 중이면 그랩 제스처 무시
+          if (transferStateRef.current === 'sending' || transferStateRef.current === 'receiving') {
+            return;
+          }
+
+          // 그랩 제스처 감지 (손바닥을 펴고 있다가 그랩으로 전환)
+          if (grabHand) {
+            if (!wasOpenPalmRef.current) {
+              // 손바닥을 펴지 않고 바로 그랩한 경우 - 손바닥 상태로 간주
+              wasOpenPalmRef.current = true;
+              if (!lastLogTimeRef.current['grabNoPalm'] || now - lastLogTimeRef.current['grabNoPalm'] > 2000) {
+                console.log('[Transfer] 그랩 감지됨 (손바닥 상태 없이) - 손바닥 상태로 설정');
+                lastLogTimeRef.current['grabNoPalm'] = now;
+              }
+              return;
+            }
+
+            // 그랩 시작 시간 기록
+            if (grabStartTimeRef.current === null) {
+              grabStartTimeRef.current = now;
+              if (!lastLogTimeRef.current['grabStart'] || now - lastLogTimeRef.current['grabStart'] > 2000) {
+                console.log(`[Transfer] 그랩 감지됨 - ${transferMode === 'send' ? '전송' : '수신'} 모드`);
+                lastLogTimeRef.current['grabStart'] = now;
+              }
+              if (!lastToastTimeRef.current['grabStart'] || now - lastToastTimeRef.current['grabStart'] > 2000) {
+                toast.info(`${transferMode === 'send' ? '전송' : '수신'} 준비 중... 2초간 유지하세요`);
+                lastToastTimeRef.current['grabStart'] = now;
+              }
+            }
+
+            // 2초 동안 그랩 상태 유지 확인
+            const grabDuration = now - grabStartTimeRef.current;
+            const remaining = Math.ceil((2000 - grabDuration) / 1000);
+            
+            if (grabDuration >= 2000) {
+              // 2초 경과 - 전송/수신 상태로 전환
+              if (transferStateRef.current === 'idle') {
+                if (!lastLogTimeRef.current['grabComplete'] || now - lastLogTimeRef.current['grabComplete'] > 2000) {
+                  console.log(`[Transfer] 2초 경과 - ${transferMode === 'send' ? '전송' : '수신'} 시작`);
+                  lastLogTimeRef.current['grabComplete'] = now;
+                }
+                if (transferMode === 'send') {
+                  handleSendGLB();
+                } else {
+                  transferStateRef.current = 'receiving';
+                  if (onTransferStateChange) {
+                    onTransferStateChange('receiving');
+                  }
+                  handleReceiveGLB();
+                }
+                // 상태 리셋
+                grabStartTimeRef.current = null;
+                wasOpenPalmRef.current = false;
+              }
+            } else {
+              // 2초 미만 - 진행 중 표시 (1초마다, 중복 방지)
+              if (remaining === 1 && grabDuration > 1000) {
+                if (!lastToastTimeRef.current['grabProgress'] || now - lastToastTimeRef.current['grabProgress'] > 1000) {
+                  toast.info(`${transferMode === 'send' ? '전송' : '수신'} 준비 중... (${remaining}초)`);
+                  lastToastTimeRef.current['grabProgress'] = now;
+                }
+              }
+            }
+          } else {
+            // 그랩이 아니거나 손바닥을 펴지 않은 상태
+            if (grabStartTimeRef.current !== null) {
+              if (!lastLogTimeRef.current['grabCancel'] || now - lastLogTimeRef.current['grabCancel'] > 2000) {
+                console.log('[Transfer] 그랩 중단됨');
+                lastLogTimeRef.current['grabCancel'] = now;
+              }
+              if (!lastToastTimeRef.current['grabCancel'] || now - lastToastTimeRef.current['grabCancel'] > 2000) {
+                toast.warning('그랩이 해제되었습니다. 다시 시도하세요.');
+                lastToastTimeRef.current['grabCancel'] = now;
+              }
+            }
+            // 손바닥 상태는 유지 (손을 뗀 경우가 아니라면)
+            grabStartTimeRef.current = null;
+            if (grabTimerRef.current) {
+              clearTimeout(grabTimerRef.current);
+              grabTimerRef.current = null;
+            }
+          }
+        };
+
+        // GLB 파일 전송 함수
+        const handleSendGLB = async () => {
+          // 이미 전송 중이면 중복 호출 방지
+          if (transferStateRef.current === 'sending') {
+            console.log('[Transfer] 이미 전송 중입니다.');
+            return;
+          }
+
+          try {
+            transferStateRef.current = 'sending';
+            toast.info('GLB 파일 생성 중...');
+            
+            if (!sceneRef.current || !(window as any).THREE) {
+              throw new Error('Three.js not loaded');
+            }
+
+            const THREE = (window as any).THREE;
+            
+            // GLTFExporter 로드
+            const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js');
+            const exporter = new GLTFExporter();
+
+            // 현재 씬의 모든 모델을 포함하는 그룹 생성
+            const exportGroup = new THREE.Group();
+            modelsRef.current.forEach((modelGroup) => {
+              const cloned = modelGroup.clone();
+              
+              // 텍스처 정리: 문제가 있는 텍스처 완전히 제거
+              cloned.traverse((child: any) => {
+                if (child.isMesh && child.material) {
+                  const materials = Array.isArray(child.material) ? child.material : [child.material];
+                  materials.forEach((mat: any) => {
+                    if (!mat) return;
+                    
+                    // 모든 텍스처 속성 정리
+                    const textureProps = [
+                      'map', 'normalMap', 'roughnessMap', 'metalnessMap', 
+                      'aoMap', 'emissiveMap', 'bumpMap', 'displacementMap',
+                      'alphaMap', 'lightMap', 'envMap'
+                    ];
+                    
+                    textureProps.forEach((prop) => {
+                      try {
+                        if (mat[prop]) {
+                          const texture = mat[prop];
+                          // 텍스처가 있으면 안전하게 제거 (GLTFExporter의 mimeType 오류 방지)
+                          // image.mimeType 접근 오류를 방지하기 위해 모든 텍스처 제거
+                          if (texture && texture.dispose) {
+                            try {
+                              texture.dispose();
+                            } catch (e) {
+                              // dispose 오류는 무시
+                            }
+                          }
+                          mat[prop] = null;
+                        }
+                      } catch (e) {
+                        // 텍스처 접근 중 오류 발생 시 제거
+                        mat[prop] = null;
+                      }
+                    });
+                    
+                    // 텍스처 배열이 있는 경우도 처리
+                    if (mat.maps && Array.isArray(mat.maps)) {
+                      mat.maps.forEach((tex: any) => {
+                        if (tex && tex.dispose) {
+                          try {
+                            tex.dispose();
+                          } catch (e) {
+                            // dispose 오류는 무시
+                          }
+                        }
+                      });
+                      mat.maps = [];
+                    }
+                  });
+                }
+              });
+              
+              exportGroup.add(cloned);
+            });
+
+            // GLB 파일로 내보내기 (텍스처 처리 오류 방지)
+            const glbBlob = await new Promise<Blob>((resolve, reject) => {
+              // 오류 처리 개선
+              const timeout = setTimeout(() => {
+                reject(new Error('GLB export timeout'));
+              }, 30000); // 30초 타임아웃
+
+              try {
+                exporter.parse(
+                  exportGroup,
+                  (result: any) => {
+                    clearTimeout(timeout);
+                    if (result instanceof ArrayBuffer) {
+                      const blob = new Blob([result], { type: 'model/gltf-binary' });
+                      resolve(blob);
+                    } else {
+                      reject(new Error('Export failed: Invalid result'));
+                    }
+                  },
+                  (error: any) => {
+                    clearTimeout(timeout);
+                    console.error('[Transfer] GLB export error:', error);
+                    reject(error);
+                  },
+                  { 
+                    binary: true,
+                    includeCustomExtensions: false,
+                    // 텍스처를 포함하지 않도록 설정 (오류 방지)
+                    onlyVisible: true,
+                    truncateDrawRange: true
+                  }
+                );
+              } catch (error) {
+                clearTimeout(timeout);
+                reject(error);
+              }
+            });
+
+            // Blob을 File로 변환
+            const glbFile = new File([glbBlob], `scene_${Date.now()}.glb`, {
+              type: 'model/gltf-binary',
+            });
+
+            // 서버로 업로드
+            toast.info('서버로 업로드 중...');
+            const result = await transferApi.uploadGLB(glbFile);
+            
+            toast.success(`전송 완료! 파일 ID: ${result.fileId}`);
+            transferStateRef.current = 'idle';
+            if (onTransferStateChange) {
+              onTransferStateChange('idle');
+            }
+          } catch (error) {
+            console.error('Send GLB error:', error);
+            toast.error(`전송 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+            transferStateRef.current = 'idle';
+            if (onTransferStateChange) {
+              onTransferStateChange('idle');
+            }
+          }
+        };
+
+        // GLB 파일 수신 함수
+        const handleReceiveGLB = async () => {
+          try {
+            // 최신 파일 ID 확인
+            const latestFileId = await transferApi.getLatestFileId();
+            
+            if (!latestFileId) {
+              toast.info('수신할 파일이 없습니다.');
+              transferStateRef.current = 'idle';
+              if (onTransferStateChange) {
+                onTransferStateChange('idle');
+              }
+              return;
+            }
+
+            // 이미 수신한 파일이면 스킵 (중복 수신 방지)
+            if (latestFileId === lastCheckedFileIdRef.current) {
+              toast.info('이미 수신한 최신 파일입니다. 새 파일이 업로드될 때까지 기다려주세요.');
+              transferStateRef.current = 'idle';
+              if (onTransferStateChange) {
+                onTransferStateChange('idle');
+              }
+              return;
+            }
+
+            toast.info('GLB 파일 다운로드 중...');
+            
+            // 파일 다운로드
+            const blob = await transferApi.downloadGLB(latestFileId);
+            lastCheckedFileIdRef.current = latestFileId;
+
+            // Blob을 URL로 변환
+            const url = URL.createObjectURL(blob);
+
+            // GLB 파일 로드
+            if (!loaderRef.current || !sceneRef.current) {
+              throw new Error('Scene not initialized');
+            }
+
+            const THREE = (window as any).THREE;
+            loaderRef.current.load(
+              url,
+              (gltf: any) => {
+                // 기존 모델 제거 (선택사항 - 필요에 따라 수정)
+                // modelsRef.current.forEach((group) => {
+                //   sceneRef.current?.remove(group);
+                // });
+                // modelsRef.current.clear();
+
+                // 새 모델 추가
+                const modelGroup = new THREE.Group();
+                modelGroup.add(gltf.scene.clone());
+                modelGroup.userData.modelId = `received_${Date.now()}`;
+                sceneRef.current.add(modelGroup);
+                modelsRef.current.set(modelGroup.userData.modelId, modelGroup);
+
+                toast.success('수신 완료!');
+                transferStateRef.current = 'idle';
+                if (onTransferStateChange) {
+                  onTransferStateChange('idle');
+                }
+
+                // URL 정리
+                URL.revokeObjectURL(url);
+              },
+              undefined,
+              (error: Error) => {
+                console.error('Load GLB error:', error);
+                toast.error(`파일 로드 실패: ${error.message}`);
+                transferStateRef.current = 'idle';
+                if (onTransferStateChange) {
+                  onTransferStateChange('idle');
+                }
+                URL.revokeObjectURL(url);
+              }
+            );
+          } catch (error) {
+            console.error('Receive GLB error:', error);
+            toast.error(`수신 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+            transferStateRef.current = 'idle';
+            if (onTransferStateChange) {
+              onTransferStateChange('idle');
+            }
+          }
+        };
 
         // Start processing video
         console.log('[Hand Gesture] Starting camera processing...');
