@@ -122,23 +122,43 @@ const Gallery4 = ({
                 className="max-w-[280px] pl-[16px] lg:max-w-[300px]"
               >
                 <a href={item.href} className="group rounded-xl">
-                  <div className="group relative h-full min-h-[20rem] max-w-full overflow-hidden rounded-xl md:aspect-[5/4] lg:aspect-[16/9]">
+                  <div className="group relative h-full min-h-[20rem] max-w-full overflow-hidden rounded-xl md:aspect-[5/4] lg:aspect-[16/9] border border-border bg-card shadow-lg cursor-pointer transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-2">
+                    {/* Fallback gradient background */}
+                    <div className="absolute inset-0 h-full w-full bg-gradient-to-br from-gray-400 via-gray-500 to-gray-600 z-0" />
+                    
+                    {/* Background Image with Zoom Effect on Hover */}
                     <img
                       src={item.image}
                       alt={item.title}
-                      className="absolute h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-105"
+                      className="absolute h-full w-full object-cover object-center transition-transform duration-500 ease-in-out group-hover:scale-110 z-10"
                     />
-                    <div className="absolute inset-0 h-full bg-[linear-gradient(hsl(var(--primary)/0),hsl(var(--primary)/0.4),hsl(var(--primary)/0.8)_100%)] mix-blend-multiply" />
-                    <div className="absolute inset-x-0 bottom-0 flex flex-col items-start p-4 text-primary-foreground">
-                      <div className="mb-1 text-lg font-semibold">
-                        {item.title}
-                      </div>
-                      <div className="mb-4 line-clamp-2 text-sm">
-                        {item.description}
-                      </div>
-                      <div className="flex items-center text-xs">
-                        Read more{" "}
-                        <ArrowRight className="ml-1 size-4 transition-transform group-hover:translate-x-1" />
+                    
+                    {/* Gradient Overlay for Text Readability - 하단 그라데이션 강화 */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent z-20"></div>
+                    
+                    {/* Content Container */}
+                    <div className="relative flex h-full flex-col p-4 text-card-foreground z-30 overflow-hidden">
+                      {/* 헤더와 설명글을 함께 감싸서 호버 시 올라가도록 */}
+                      <div className="absolute bottom-0 left-0 right-0 transform translate-y-0 group-hover:-translate-y-20 transition-transform duration-300 ease-in-out">
+                        {/* 헤더 (제목) - 기본 상태에서 카드 가장 아래에 위치 */}
+                        <div className="p-4 space-y-2">
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">{item.title}</h3>
+                          </div>
+                        </div>
+
+                        {/* Overview - 호버 시 아래에서 올라오면서 표시 */}
+                        <div className="absolute top-full left-0 right-0 px-4 pb-6 opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all duration-300 ease-in-out">
+                          <div className="space-y-2 pt-2 border-t border-white/20">
+                            <p className="text-sm text-white/70 leading-relaxed line-clamp-2">
+                              {item.description}
+                            </p>
+                            <div className="flex items-center text-xs text-white/80 mt-2">
+                              Read more{" "}
+                              <ArrowRight className="ml-1 size-4 transition-transform group-hover:translate-x-1" />
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

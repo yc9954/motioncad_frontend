@@ -121,6 +121,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [dioramaName, setDioramaName] = useState("새 디오라마");
   const [savedDioramas, setSavedDioramas] = useState<Diorama[]>([]);
   const [webcamEnabled, setWebcamEnabled] = useState(false);
+  const [transferMode, setTransferMode] = useState<'send' | 'receive'>('send');
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [libraryParts, setLibraryParts] = useState<PartResponse[]>([]);
@@ -309,13 +310,17 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   // 초기 모델 로드 (대시보드에서 프로젝트 클릭 시)
   useEffect(() => {
     if (initialModelUrl && initialModelName) {
-      // 이미 같은 모델이 있는지 확인
-      const existingModel = sceneModels.find(m => m.modelUrl === initialModelUrl);
+      // 이미 같은 모델이 있는지 확인 (URL과 이름으로 비교)
+      const existingModel = sceneModels.find(
+        m => m.modelUrl === initialModelUrl && m.name === initialModelName
+      );
+
       if (!existingModel) {
+        // 씬이 비어있으면 중앙에, 아니면 오프셋 적용
         const offset = sceneModels.length * 0.5;
-        const centerX = offset;
+        const centerX = sceneModels.length === 0 ? 0 : offset;
         const centerY = 0;
-        const centerZ = offset;
+        const centerZ = sceneModels.length === 0 ? 0 : offset;
 
         const newModel: SceneModel = {
           id: `initial-${Date.now()}`,
@@ -331,9 +336,12 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         setSceneModels((prev) => [...prev, newModel]);
         setSelectedModelIds([newModel.id]);
         toast.success(`${initialModelName}이(가) 씬에 추가되었습니다.`);
+      } else {
+        // 이미 있는 모델이면 선택만
+        setSelectedModelIds([existingModel.id]);
       }
     }
-  }, [initialModelUrl, initialModelName, sceneModels]);
+  }, [initialModelUrl, initialModelName]); // sceneModels 의존성 제거하여 무한 루프 방지
 
   // 추천 에셋 썸네일 생성 (GLB에서 생성 시도, 실패하면 하드코딩된 썸네일 사용)
   useEffect(() => {
@@ -1856,6 +1864,17 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               onModelRotate={handleModelRotationUpdate}
               onModelScale={handleModelScaleUpdate}
               webcamEnabled={webcamEnabled}
+              transferMode={transferMode}
+              onTransferStateChange={(state) => {
+                // transferMode에 따라 적절한 로그만 출력
+                if (state === 'sending' && transferMode === 'send') {
+                  // 전송 모드일 때만 전송 로그 출력
+                  // toast는 handleSendGLB에서 이미 출력하므로 여기서는 생략
+                } else if (state === 'receiving' && transferMode === 'receive') {
+                  // 수신 모드일 때만 수신 로그 출력
+                  // toast는 handleReceiveGLB에서 이미 출력하므로 여기서는 생략
+                }
+              }}
             />
             {/* 선택된 모델 삭제 버튼 */}
             {selectedModelId && (
@@ -2047,6 +2066,36 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                   <Camera className={`h-4 w-4 mr-2 ${webcamEnabled ? 'text-white' : ''}`} />
                   {webcamEnabled ? '모션 제어 ON' : '모션 제어 OFF'}
                 </Button>
+
+                {/* Transfer Mode Toggle (전송/수신 모드 전환) */}
+                {webcamEnabled && (
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant={transferMode === "send" ? "default" : "outline"}
+                      className="flex-1 h-8"
+                      onClick={() => {
+                        setTransferMode("send");
+                        toast.info("전송 모드: 손바닥 → 그랩 2초로 GLB 파일을 서버로 전송합니다");
+                      }}
+                    >
+                      <Upload className="h-3 w-3 mr-1" />
+                      전송
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={transferMode === "receive" ? "default" : "outline"}
+                      className="flex-1 h-8"
+                      onClick={() => {
+                        setTransferMode("receive");
+                        toast.info("수신 모드: 손바닥 → 그랩 2초로 서버에서 GLB 파일을 수신합니다");
+                      }}
+                    >
+                      <Download className="h-3 w-3 mr-1" />
+                      수신
+                    </Button>
+                  </div>
+                )}
 
                 <div className="flex gap-1">
                   <Button
