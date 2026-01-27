@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { 
+import {
   Sidebar,
   SidebarProvider,
   SidebarContent,
@@ -15,7 +15,7 @@ import {
   SidebarHeader,
 } from "@/components/blocks/sidebar"
 
-import { 
+import {
   User,
   ChevronsUpDown,
   Home,
@@ -135,7 +135,7 @@ type TabId = "home" | "prompting" | "profile";
 
 export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: DashboardPageProps) {
   const [activeTab, setActiveTab] = useState<TabId>("home");
-  
+
   // 초기 상태: mock 데이터로 시작 (previewImageUrl은 null로 설정하여 GLB에서 생성)
   const initialMockProjects: ProjectResponse[] = mockProjects.map(p => ({
     id: p.id,
@@ -151,23 +151,33 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }));
-  
+
   const [projects, setProjects] = useState<ProjectResponse[]>(initialMockProjects);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [projectThumbnails, setProjectThumbnails] = useState<Record<number, string>>({});
   const [selectedProject, setSelectedProject] = useState<{ glbUrl: string; name: string } | null>(null);
 
+  const onProjectClick = (project: ProjectResponse) => {
+    const mockProject = mockProjects.find(p => p.id === project.id);
+    setSelectedProject({
+      glbUrl: project.previewImageUrl || projectThumbnails[project.id] || mockProject?.glbUrl || '',
+      name: project.title
+    });
+    setActiveTab("prompting");
+    toast.info(`${project.title} 프로젝트가 선택되었습니다.`);
+  };
+
   // 백엔드에서 프로젝트 목록 가져오기 (백그라운드에서 시도)
   useEffect(() => {
     const loadProjects = async () => {
       if (activeTab !== 'home') return;
-      
+
       setIsLoadingProjects(true);
       try {
         const fetchedProjects = await projectApi.getProjects({ sort: 'latest' });
         if (fetchedProjects && fetchedProjects.length > 0) {
           setProjects(fetchedProjects);
-          
+
           // 썸네일 URL 설정
           const thumbnails: Record<number, string> = {};
           fetchedProjects.forEach(project => {
@@ -198,8 +208,8 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
       const width = 512;
       const height = 512;
       const pixelRatio = Math.min(window.devicePixelRatio, 2);
-      const renderer = new THREE.WebGLRenderer({ 
-        antialias: true, 
+      const renderer = new THREE.WebGLRenderer({
+        antialias: true,
         alpha: true,
         preserveDrawingBuffer: true,
         powerPreference: "high-performance",
@@ -222,12 +232,12 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
       // 조명 설정
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
       scene.add(ambientLight);
-      
+
       const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1);
       directionalLight1.position.set(5, 10, 5);
       directionalLight1.castShadow = true;
       scene.add(directionalLight1);
-      
+
       const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
       directionalLight2.position.set(-5, 5, -5);
       scene.add(directionalLight2);
@@ -237,7 +247,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
 
       // 모델 로드
       const loader = new GLTFLoader();
-      
+
       return new Promise((resolve) => {
         loader.load(
           fileUrl,
@@ -247,7 +257,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
 
               // 모델 바운딩 박스 계산
               const box = new THREE.Box3().setFromObject(model);
-              
+
               if (box.isEmpty()) {
                 throw new Error('모델이 비어있습니다.');
               }
@@ -255,7 +265,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
               const center = box.getCenter(new THREE.Vector3());
               const size = box.getSize(new THREE.Vector3());
               const maxDim = Math.max(size.x, size.y, size.z);
-              
+
               if (maxDim === 0) {
                 throw new Error('모델 크기가 0입니다.');
               }
@@ -270,7 +280,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
               const newCenter = newBox.getCenter(new THREE.Vector3());
               const newSize = newBox.getSize(new THREE.Vector3());
               const newMaxDim = Math.max(newSize.x, newSize.y, newSize.z);
-              
+
               const distance = newMaxDim * 2.5;
               camera.position.set(
                 newCenter.x + distance * 0.7,
@@ -285,7 +295,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
 
               // 캔버스를 이미지로 변환
               const dataUrl = renderer.domElement.toDataURL('image/png', 0.9);
-              
+
               // 정리
               URL.revokeObjectURL(fileUrl);
               renderer.dispose();
@@ -300,7 +310,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
                   }
                 }
               });
-              
+
               resolve(dataUrl);
             } catch (error) {
               console.error('Error processing model:', error);
@@ -336,8 +346,8 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
       const width = 512;
       const height = 512;
       const pixelRatio = Math.min(window.devicePixelRatio, 2);
-      const renderer = new THREE.WebGLRenderer({ 
-        antialias: true, 
+      const renderer = new THREE.WebGLRenderer({
+        antialias: true,
         alpha: true,
         preserveDrawingBuffer: true,
         powerPreference: "high-performance",
@@ -360,19 +370,19 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
       // 조명 설정
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
       scene.add(ambientLight);
-      
+
       const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1);
       directionalLight1.position.set(5, 10, 5);
       directionalLight1.castShadow = true;
       scene.add(directionalLight1);
-      
+
       const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
       directionalLight2.position.set(-5, 5, -5);
       scene.add(directionalLight2);
 
       // 모델 로드 (GLTFLoader가 직접 URL 사용)
       const loader = new GLTFLoader();
-      
+
       return new Promise((resolve) => {
         loader.load(
           glbUrl,
@@ -382,7 +392,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
 
               // 모델 바운딩 박스 계산
               const box = new THREE.Box3().setFromObject(model);
-              
+
               if (box.isEmpty()) {
                 throw new Error('모델이 비어있습니다.');
               }
@@ -390,7 +400,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
               const center = box.getCenter(new THREE.Vector3());
               const size = box.getSize(new THREE.Vector3());
               const maxDim = Math.max(size.x, size.y, size.z);
-              
+
               if (maxDim === 0) {
                 throw new Error('모델 크기가 0입니다.');
               }
@@ -405,7 +415,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
               const newCenter = newBox.getCenter(new THREE.Vector3());
               const newSize = newBox.getSize(new THREE.Vector3());
               const newMaxDim = Math.max(newSize.x, newSize.y, newSize.z);
-              
+
               const distance = newMaxDim * 2.5;
               camera.position.set(
                 newCenter.x + distance * 0.7,
@@ -420,7 +430,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
 
               // 캔버스를 이미지로 변환
               const dataUrl = renderer.domElement.toDataURL('image/png', 0.9);
-              
+
               // 정리
               renderer.dispose();
               scene.clear();
@@ -434,7 +444,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
                   }
                 }
               });
-              
+
               resolve(dataUrl);
             } catch (error) {
               console.error('Error processing model:', error);
@@ -461,26 +471,26 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
   // 프로젝트 썸네일 생성 (GLB 파일에서)
   useEffect(() => {
     if (activeTab !== "home" || projects.length === 0) return;
-    
+
     const generateThumbnails = async () => {
       const thumbnails: Record<number, string> = {};
-      
+
       // 썸네일이 필요한 프로젝트들 찾기 (previewImageUrl이 없고, projectThumbnails에도 없는 경우)
       // GLB에서 썸네일을 생성하도록 항상 시도
       const projectsToProcess = projects.filter(project => {
         const hasPreviewImage = !!project.previewImageUrl;
         const hasThumbnail = !!projectThumbnails[project.id];
-        
+
         return !hasPreviewImage && !hasThumbnail;
       });
-      
+
       if (projectsToProcess.length === 0) return;
-      
+
       // 병렬 처리 (최대 2개씩 - GLB 로드가 무거우므로)
       const batchSize = 2;
       for (let i = 0; i < projectsToProcess.length; i += batchSize) {
         const batch = projectsToProcess.slice(i, i + batchSize);
-        
+
         const batchPromises = batch.map(async (project) => {
           const mockProject = mockProjects.find(p => p.id === project.id);
           if (mockProject?.glbUrl) {
@@ -498,9 +508,9 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
             }
           }
         });
-        
+
         await Promise.all(batchPromises);
-        
+
         // 배치마다 상태 업데이트 (점진적 렌더링)
         if (Object.keys(thumbnails).length > 0) {
           setProjectThumbnails(prev => ({ ...prev, ...thumbnails }));
@@ -571,46 +581,46 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
           <div className="space-y-4">
             {/* Gallery Section */}
             <Gallery4 {...galleryData} />
-            
+
             {/* Projects Section */}
             <div className="p-6">
               <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold">Recent Projects</h2>
-                <button className="text-sm text-muted-foreground hover:text-foreground">
-                  View all →
-                </button>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-2xl font-bold">Recent Projects</h2>
+                  <button className="text-sm text-muted-foreground hover:text-foreground">
+                    View all →
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {projects.map((project) => {
+                    // 썸네일 URL: previewImageUrl 우선, 없으면 projectThumbnails (GLB에서 생성된 썸네일)
+                    // GLB 썸네일이 아직 생성 중이면 mockProjects의 thumbnailUrl을 임시로 사용
+                    const thumbnailUrl = project.previewImageUrl || projectThumbnails[project.id];
+                    const mockProject = mockProjects.find(p => p.id === project.id);
+
+                    // GLB 썸네일이 없고 생성 중일 때만 fallback 사용
+                    const imageUrl = thumbnailUrl || mockProject?.thumbnailUrl || '';
+
+                    return (
+                      <TravelCard
+                        key={project.id}
+                        imageUrl={imageUrl}
+                        imageAlt={project.title}
+                        title={project.title}
+                        location={`by ${project.nickname || 'Unknown'}`}
+                        overview={project.description || `This project has ${project.viewsCount} views and ${project.likesCount} likes. Click to open and edit in the 3D editor.`}
+                        onBookNow={() => onProjectClick(project)}
+                        className="h-[350px]"
+                      />
+                    );
+                  })}
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {projects.map((project) => {
-                  // 썸네일 URL: previewImageUrl 우선, 없으면 projectThumbnails (GLB에서 생성된 썸네일)
-                  // GLB 썸네일이 아직 생성 중이면 mockProjects의 thumbnailUrl을 임시로 사용
-                  const thumbnailUrl = project.previewImageUrl || projectThumbnails[project.id];
-                  const mockProject = mockProjects.find(p => p.id === project.id);
-                  
-                  // GLB 썸네일이 없고 생성 중일 때만 fallback 사용
-                  const imageUrl = thumbnailUrl || mockProject?.thumbnailUrl || '';
-                  
-                  return (
-                    <TravelCard
-                      key={project.id}
-                      imageUrl={imageUrl}
-                      imageAlt={project.title}
-                      title={project.title}
-                      location={`by ${project.nickname || 'Unknown'}`}
-                      overview={project.description || `This project has ${project.viewsCount} views and ${project.likesCount} likes. Click to open and edit in the 3D editor.`}
-                      onBookNow={() => onProjectClick(project)}
-                      className="h-[350px]"
-                    />
-                  );
-                })}
-              </div>
-            </div>
             </div>
           </div>
         );
       case "prompting":
-        return <PromptingTab 
+        return <PromptingTab
           initialModelUrl={selectedProject?.glbUrl}
           initialModelName={selectedProject?.name}
         />;
@@ -636,7 +646,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
               <SidebarMenu>
                 {menuItems.map((item) => (
                   <SidebarMenuItem key={item.id} style={{ animation: "none" }}>
-                    <SidebarMenuButton 
+                    <SidebarMenuButton
                       tooltip={item.title}
                       isActive={activeTab === item.id}
                       onClick={() => setActiveTab(item.id as TabId)}
@@ -668,11 +678,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
               <Button
                 variant="outline"
                 className="w-full mt-2"
-                onClick={() => {
-                  authApi.logout();
-                  onNavigateToLanding();
-                  toast.success("로그아웃되었습니다.");
-                }}
+                onClick={onNavigateToLanding}
               >
                 <LogOut className="h-4 w-4 mr-2" />
                 로그아웃

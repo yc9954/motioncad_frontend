@@ -1,4 +1,4 @@
-import { Camera, Grid3x3, Save, Upload, RotateCcw } from 'lucide-react';
+import { Camera, Grid3x3, Save, Upload, RotateCcw, LogOut } from 'lucide-react';
 import { Switch } from '@/app/components/ui/switch';
 import { Button } from '@/app/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/app/components/ui/tooltip';
@@ -12,6 +12,8 @@ interface TopNavigationBarProps {
   onSave: () => void;
   onLoad: () => void;
   onReset: () => void;
+  isAuthenticated?: boolean;
+  onLogout?: () => void;
 }
 
 export function TopNavigationBar({
@@ -23,6 +25,8 @@ export function TopNavigationBar({
   onSave,
   onLoad,
   onReset,
+  isAuthenticated,
+  onLogout,
 }: TopNavigationBarProps) {
   return (
     <div className="h-16 bg-[#1a1b26]/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-6">
@@ -109,6 +113,18 @@ export function TopNavigationBar({
           <RotateCcw className="w-4 h-4 mr-2" />
           Reset
         </Button>
+
+        {/* Logout Button */}
+        {isAuthenticated && (
+          <Button
+            onClick={onLogout}
+            variant="ghost"
+            className="text-gray-400 hover:text-white hover:bg-white/5 px-3 h-9 ml-2"
+          >
+            <LogOut className="w-4 h-4 mr-1" />
+            Logout
+          </Button>
+        )}
       </div>
     </div>
   );

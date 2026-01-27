@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { LandingPage } from '@/app/components/landing-page';
 import { DashboardPage } from '@/app/components/dashboard-page';
 import { LoginPage } from '@/app/components/login-page';
+import { SignupPage } from '@/app/components/signup-page';
 import { TopNavigationBar } from '@/app/components/top-navigation-bar';
 import { PartsLibrary, Part } from '@/app/components/parts-library';
 import { Canvas3DViewport } from '@/app/components/canvas-3d-viewport';
@@ -9,15 +11,13 @@ import { PropertiesPanel, TransformValues } from '@/app/components/properties-pa
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
 import { authApi } from '@/lib/api';
+import { OAuth2RedirectHandler } from '@/app/components/oauth2-redirect-handler';
 
 const GESTURES = ['None', 'Open Palm', 'Pinch', 'Point', 'Grab', 'Zoom'];
 
-export default function App() {
-  // 초기 상태: 항상 랜딩 페이지에서 시작
+function AppContent() {
+  const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(() => authApi.isAuthenticated());
-  const [showLanding, setShowLanding] = useState(true);
-  const [showDashboard, setShowDashboard] = useState(false);
-  const [showLogin, setShowLogin] = useState(false);
   const [webcamEnabled, setWebcamEnabled] = useState(false);
   const [handTrackingActive, setHandTrackingActive] = useState(false);
   const [gridSnapEnabled, setGridSnapEnabled] = useState(true);
@@ -30,22 +30,24 @@ export default function App() {
     scale: 100,
   });
 
+  // Check auth status on mount
+  useEffect(() => {
+    setIsAuthenticated(authApi.isAuthenticated());
+  }, []);
+
   // Simulate hand tracking when webcam is enabled
   useEffect(() => {
-    if (webcamEnabled && !showLanding) {
+    if (webcamEnabled) {
       // Simulate hand detection after a short delay
       const trackingTimer = setTimeout(() => {
         setHandTrackingActive(true);
         toast.success('Hand tracking activated');
       }, 1000);
 
-      // Simulate hand movement and gesture changes
       const gestureInterval = setInterval(() => {
-        // Random gesture change
         const randomGesture = GESTURES[Math.floor(Math.random() * GESTURES.length)];
         setCurrentGesture(randomGesture);
 
-        // Random hand position
         if (Math.random() > 0.3) {
           setHandPosition({
             x: 30 + Math.random() * 40,
@@ -54,7 +56,6 @@ export default function App() {
         }
       }, 3000);
 
-      // Continuous subtle hand movement
       const positionInterval = setInterval(() => {
         if (handPosition) {
           setHandPosition(prev => {
@@ -77,22 +78,7 @@ export default function App() {
         toast.info('Hand tracking deactivated');
       };
     }
-  }, [webcamEnabled, showLanding]);
-
-  const handleGetStarted = () => {
-    setShowLanding(false);
-    setShowDashboard(true);
-    toast.success('대시보드로 이동했습니다!', {
-      description: '빌더를 시작하려면 Go to Builder 버튼을 클릭하세요.',
-    });
-  };
-
-  const handleNavigateToBuilder = () => {
-    setShowDashboard(false);
-    toast.success('디오라마 빌더에 오신 것을 환영합니다!', {
-      description: '왼쪽에서 파트를 선택하여 시작하세요.',
-    });
-  };
+  }, [webcamEnabled]);
 
   const handleWebcamToggle = () => {
     setWebcamEnabled(!webcamEnabled);
@@ -110,7 +96,6 @@ export default function App() {
 
   const handlePartSelect = (part: Part) => {
     setSelectedPart(part);
-    // Reset transform for new part
     setTransform({
       position: { x: 0, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0 },
@@ -154,110 +139,20 @@ export default function App() {
     });
   };
 
+  const handleLogout = () => {
+    authApi.logout();
+    setIsAuthenticated(false);
+    navigate('/');
+    toast.info('로그아웃 되었습니다.');
+  };
+
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
-    setShowLogin(false);
-    setShowLanding(false);
-    setShowDashboard(true);
+    navigate('/');
   };
 
-  const handleShowLogin = () => {
-    console.log('handleShowLogin called');
-    setShowLogin(true);
-    setShowLanding(false);
-    setShowDashboard(false);
-  };
-
-  const handleGetStartedWithLogin = () => {
-    // 개발 단계: 로그인 없이 바로 대시보드로 이동
-    // if (!isAuthenticated) {
-    //   setShowLogin(true);
-    //   setShowLanding(false);
-    // } else {
-    //   handleGetStarted();
-    // }
-    handleGetStarted();
-  };
-
-  // Show login page
-  if (showLogin) {
-    return (
-      <>
-        <LoginPage 
-          onLoginSuccess={handleLoginSuccess}
-          onNavigateToSignup={() => {
-            toast.info("회원가입 기능은 곧 추가될 예정입니다.");
-          }}
-        />
-        <Toaster 
-          position="bottom-right"
-          toastOptions={{
-            style: {
-              background: '#2a2a3e',
-              color: '#ffffff',
-              border: '1px solid #3a3a4e',
-            },
-          }}
-        />
-      </>
-    );
-  }
-
-  // Show landing page
-  if (showLanding) {
-    return (
-      <>
-        <LandingPage 
-          onGetStarted={handleGetStartedWithLogin}
-          onLogin={handleShowLogin}
-        />
-        <Toaster 
-          position="bottom-right"
-          toastOptions={{
-            style: {
-              background: '#2a2a3e',
-              color: '#ffffff',
-              border: '1px solid #3a3a4e',
-            },
-          }}
-        />
-      </>
-    );
-  }
-
-  const handleNavigateToLanding = () => {
-    setIsAuthenticated(false);
-    setShowDashboard(false);
-    setShowLogin(false);
-    setShowLanding(true);
-  };
-
-  // Show dashboard page
-  if (showDashboard) {
-    return (
-      <>
-        <DashboardPage 
-          onNavigateToBuilder={handleNavigateToBuilder}
-          onNavigateToLanding={handleNavigateToLanding}
-        />
-        <Toaster 
-          position="bottom-right"
-          toastOptions={{
-            style: {
-              background: '#2a2a3e',
-              color: '#ffffff',
-              border: '1px solid #3a3a4e',
-            },
-          }}
-        />
-      </>
-    );
-  }
-
-  // Show main application
-  return (
+  const MainApp = () => (
     <div className="size-full flex flex-col bg-[#0d0e14] text-white">
-      {/* Top Navigation */}
       <TopNavigationBar
         webcamEnabled={webcamEnabled}
         onWebcamToggle={handleWebcamToggle}
@@ -267,21 +162,17 @@ export default function App() {
         onSave={handleSave}
         onLoad={handleLoad}
         onReset={handleReset}
+        isAuthenticated={isAuthenticated}
+        onLogout={handleLogout}
       />
 
-      {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Parts Library */}
         <PartsLibrary onPartSelect={handlePartSelect} />
-
-        {/* Center - 3D Canvas */}
         <Canvas3DViewport
           webcamEnabled={webcamEnabled}
           currentGesture={currentGesture}
           handPosition={handPosition}
         />
-
-        {/* Right Panel - Properties */}
         <PropertiesPanel
           selectedPart={selectedPart}
           transform={transform}
@@ -290,8 +181,7 @@ export default function App() {
         />
       </div>
 
-      {/* Toast Notifications */}
-      <Toaster 
+      <Toaster
         position="bottom-right"
         toastOptions={{
           style: {
@@ -302,5 +192,73 @@ export default function App() {
         }}
       />
     </div>
+  );
+
+  return (
+    <Routes>
+      <Route
+        path="/"
+        element={
+          isAuthenticated ? (
+            <DashboardPage
+              onNavigateToBuilder={() => navigate('/builder')}
+              onNavigateToLanding={handleLogout}
+            />
+          ) : (
+            <LandingPage
+              onGetStarted={() => navigate('/login')}
+            />
+          )
+        }
+      />
+      <Route
+        path="/builder"
+        element={isAuthenticated ? <MainApp /> : <Navigate to="/login" />}
+      />
+      <Route
+        path="/login"
+        element={
+          isAuthenticated ? (
+            <Navigate to="/" />
+          ) : (
+            <LoginPage
+              onLoginSuccess={handleLoginSuccess}
+              onNavigateToSignup={() => navigate('/signup')}
+            />
+          )
+        }
+      />
+      <Route
+        path="/signup"
+        element={
+          isAuthenticated ? (
+            <Navigate to="/" />
+          ) : (
+            <SignupPage
+              onNavigateToLogin={() => navigate('/login')}
+            />
+          )
+        }
+      />
+      <Route path="/oauth2/redirect" element={<OAuth2RedirectHandler />} />
+    </Routes>
+  );
+}
+
+export default function App() {
+  return (
+    <Router>
+      <AppContent />
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          style: {
+            background: '#2a2a3e',
+            color: '#ffffff',
+            border: '1px solid #3a3a4e',
+          },
+        }}
+      />
+    </Router>
   );
 }
