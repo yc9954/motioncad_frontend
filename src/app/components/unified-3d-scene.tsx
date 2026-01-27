@@ -790,9 +790,18 @@ export function Unified3DScene({
           if (pinchingHands.length === 2 && worldPinchingHands.length === 2) {
             // Double Pinch - Scaling (최우선)
             console.log('[Hand Gesture] Double pinch detected - scaling');
+            // 현재 선택된 모델의 스케일 가져오기
+            let currentObjectScale: number | undefined;
+            if (selectedModelId) {
+              const modelGroup = modelsRef.current.get(selectedModelId);
+              if (modelGroup) {
+                currentObjectScale = modelGroup.scale.x;
+              }
+            }
             const scale = gestureControllerRef.current.handleScaling(
               pinchingHands[0],
-              pinchingHands[1]
+              pinchingHands[1],
+              currentObjectScale
             );
             if (scale !== null) {
               targetScaleRef.current = scale;
