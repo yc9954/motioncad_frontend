@@ -73,12 +73,12 @@ export class HandGestureController {
       rotationX: 0,
       rotationY: 0,
       filters: {
-        // 드래그 반응성을 높이기 위해 필터 파라미터 조정
-        // mincutoff를 낮추고 beta를 높여서 빠른 움직임(특히 좌우)에 더 잘 반응하도록
-        // freq: 30Hz, mincutoff: 0.3 (낮을수록 부드럽지만 지연), beta: 0.5 (높을수록 빠른 움직임에 반응)
-        x: new OneEuroFilter(30, 0.3, 0.5),
-        y: new OneEuroFilter(30, 0.3, 0.5),
-        z: new OneEuroFilter(30, 0.5, 0.3),
+        // 드래그 반응성과 부드러움의 균형
+        // mincutoff: 0.7 (너무 높으면 지터 발생, 너무 낮으면 지연), beta: 0.6 (빠른 움직임에 반응)
+        // Y축은 수직 움직임이 더 자연스럽도록 약간 다른 파라미터 사용
+        x: new OneEuroFilter(30, 0.7, 0.6),
+        y: new OneEuroFilter(30, 0.8, 0.7), // Y축은 더 부드럽게
+        z: new OneEuroFilter(30, 0.6, 0.4),
       },
       poolVector: { x: 0, y: 0, z: 0 },
       initialPinchPosition: null,
@@ -160,6 +160,13 @@ export class HandGestureController {
       return null;
     }
 
+    // 싱글 핀치일 때는 스케일링 상태를 명확히 리셋 (의도치 않은 스케일링 방지)
+    if (this.state.isDoublePinching) {
+      this.state.isDoublePinching = false;
+      this.state.lastScaleDist = 0;
+      this.state.targetScale = 1.0;
+    }
+
     const middleMCP = landmarks[9];
     const zNDC = this.calculateDynamicZ(landmarks, worldLandmarks);
 
@@ -176,7 +183,7 @@ export class HandGestureController {
 
     // 핀치가 시작될 때 초기화
     if (!this.state.isPinching) {
-      // NDC 좌표 필터 리셋
+      // 필터를 raw 값으로 리셋 (초기값을 raw 값으로 설정)
       this.state.filters.x.resetWithValue(ndcX);
       this.state.filters.y.resetWithValue(ndcY);
       this.state.filters.z.resetWithValue(zNDC);
@@ -184,21 +191,23 @@ export class HandGestureController {
       this.state.isPinching = true;
       this.state.isDragging = false;
 
-      // 초기 NDC 좌표 저장
-      this.state.initialNDC = { x: ndcX, y: ndcY, z: zNDC };
+      // 필터를 한 번 적용하여 안정화된 초기값 얻기
+      const timestamp = performance.now();
+      const filteredNdcX = this.state.filters.x.filter(ndcX, timestamp);
+      const filteredNdcY = this.state.filters.y.filter(ndcY, timestamp);
+      const filteredNdcZ = this.state.filters.z.filter(zNDC, timestamp);
 
-      // 객체의 현재 위치를 초기 위치로 저장
+      // 필터된 초기 NDC 좌표 저장
+      this.state.initialNDC = { x: filteredNdcX, y: filteredNdcY, z: filteredNdcZ };
+
+      // 객체의 현재 위치를 초기 위치로 저장 (정확한 현재 위치 사용)
       if (currentObjectPosition) {
         this.state.initialObjectPosition = { ...currentObjectPosition };
       } else {
         this.state.initialObjectPosition = { x: 0, y: 0, z: 0 };
       }
 
-      // Unproject로 초기 손 위치도 저장 (드래그 감지용)
-      const initVector = new THREE.Vector3(ndcX, ndcY, zNDC);
-      initVector.unproject(this.camera);
-      this.state.initialPinchPosition = { x: initVector.x, y: initVector.y, z: initVector.z };
-
+      // 디버그 로그 제거 (성능 개선)
       return null;
     }
 
@@ -214,10 +223,16 @@ export class HandGestureController {
       const ndcDeltaY = filteredNdcY - this.state.initialNDC.y;
       const ndcMovement = Math.sqrt(ndcDeltaX * ndcDeltaX + ndcDeltaY * ndcDeltaY);
 
-      // NDC 기준 임계값 (화면 비율로 약 0.5% 정도)
-      if (ndcMovement > 0.01) {
+      // NDC 기준 임계값 (화면 비율로 약 1% 정도) - 좌우 움직임을 더 잘 감지
+      if (ndcMovement > 0.02) {
         this.state.isDragging = true;
-        console.log('[Hand Gesture] Drag started, NDC movement:', ndcMovement);
+        // 드래그 시작 시 initialNDC와 initialObjectPosition을 현재 값으로 업데이트 (점프 방지)
+        // 이렇게 하면 드래그 시작 시점부터 상대적 이동만 계산됨
+        this.state.initialNDC = { x: filteredNdcX, y: filteredNdcY, z: filteredNdcZ };
+        if (currentObjectPosition) {
+          this.state.initialObjectPosition = { ...currentObjectPosition };
+        }
+        // 디버그 로그 제거 (성능 개선)
       } else {
         return null;
       }
@@ -233,19 +248,22 @@ export class HandGestureController {
     const ndcDeltaZ = filteredNdcZ - this.state.initialNDC.z;
 
     // 카메라의 right, up, forward 벡터 가져오기
-    const cameraRight = new THREE.Vector3();
-    const cameraUp = new THREE.Vector3();
-    const cameraForward = new THREE.Vector3();
+    // 카메라의 로컬 좌표계를 월드 좌표계로 변환
+    const cameraRight = new THREE.Vector3(1, 0, 0);
+    const cameraUp = new THREE.Vector3(0, 1, 0);
+    const cameraForward = new THREE.Vector3(0, 0, -1);
 
-    this.camera.getWorldDirection(cameraForward);
-    cameraForward.negate(); // 카메라가 바라보는 반대 방향 (객체 -> 카메라)
-
-    // 카메라의 right 벡터 계산 (월드 up과 forward의 외적)
-    const worldUp = new THREE.Vector3(0, 1, 0);
-    cameraRight.crossVectors(worldUp, cameraForward).normalize();
-
-    // 카메라의 up 벡터 계산 (forward와 right의 외적)
-    cameraUp.crossVectors(cameraForward, cameraRight).normalize();
+    // 카메라의 회전 행렬을 사용하여 로컬 벡터를 월드 벡터로 변환
+    const cameraMatrix = new THREE.Matrix4();
+    cameraMatrix.extractRotation(this.camera.matrixWorld);
+    
+    cameraRight.applyMatrix4(cameraMatrix);
+    cameraUp.applyMatrix4(cameraMatrix);
+    cameraForward.applyMatrix4(cameraMatrix);
+    
+    cameraRight.normalize();
+    cameraUp.normalize();
+    cameraForward.normalize();
 
     // 이동 거리 스케일 (카메라와 객체 사이 거리에 따라 조정)
     const cameraPos = new THREE.Vector3();
@@ -256,20 +274,22 @@ export class HandGestureController {
       this.state.initialObjectPosition.z
     );
     const distanceToObject = cameraPos.distanceTo(objPos);
-    const movementScale = distanceToObject * 0.8; // 거리에 비례한 이동량
+    // 거리에 비례한 이동량, 좌우 움직임을 더 잘 반영하도록 스케일 조정
+    const movementScale = distanceToObject * 1.2;
 
     // 카메라 기준 좌표계로 이동량 계산
-    // 화면의 좌우 이동 -> 카메라의 right 방향
-    // 화면의 상하 이동 -> 카메라의 up 방향
-    // 화면의 전후 이동 -> 카메라의 forward 방향
-    const worldDeltaX = cameraRight.x * ndcDeltaX * movementScale +
-                        cameraUp.x * ndcDeltaY * movementScale +
+    // 화면의 좌우 이동 -> 카메라의 right 방향 (웹캠 기준)
+    // 화면의 상하 이동 -> 카메라의 up 방향 (웹캠 기준, 수직 방향 개선)
+    // 화면의 전후 이동 -> 카메라의 forward 방향 (웹캠 기준)
+    // Y축(수직) 움직임을 더 자연스럽게 하기 위해 스케일 조정
+    const worldDeltaX = cameraRight.x * ndcDeltaX * movementScale * 1.3 +
+                        cameraUp.x * ndcDeltaY * movementScale * 1.4 + // Y축 스케일 증가
                         cameraForward.x * ndcDeltaZ * movementScale * 2;
-    const worldDeltaY = cameraRight.y * ndcDeltaX * movementScale +
-                        cameraUp.y * ndcDeltaY * movementScale +
+    const worldDeltaY = cameraRight.y * ndcDeltaX * movementScale * 1.3 +
+                        cameraUp.y * ndcDeltaY * movementScale * 1.4 + // Y축 스케일 증가
                         cameraForward.y * ndcDeltaZ * movementScale * 2;
-    const worldDeltaZ = cameraRight.z * ndcDeltaX * movementScale +
-                        cameraUp.z * ndcDeltaY * movementScale +
+    const worldDeltaZ = cameraRight.z * ndcDeltaX * movementScale * 1.3 +
+                        cameraUp.z * ndcDeltaY * movementScale * 1.4 + // Y축 스케일 증가
                         cameraForward.z * ndcDeltaZ * movementScale * 2;
 
     // 초기 객체 위치에서 카메라 기준 이동량을 더함
@@ -297,6 +317,15 @@ export class HandGestureController {
       return null;
     }
 
+    // 더블 핀치일 때는 싱글 핀치 상태를 리셋
+    if (this.state.isPinching) {
+      this.state.isPinching = false;
+      this.state.isDragging = false;
+      this.state.initialPinchPosition = null;
+      this.state.initialObjectPosition = null;
+      this.state.initialNDC = null;
+    }
+
     const h1 = hand1Landmarks[9]; // First hand middle MCP
     const h2 = hand2Landmarks[9]; // Second hand middle MCP
     const dist = Math.hypot(h1.x - h2.x, h1.y - h2.y);
@@ -305,21 +334,33 @@ export class HandGestureController {
     if (!this.state.isDoublePinching) {
       this.state.isDoublePinching = true;
       this.state.lastScaleDist = dist;
-      // 현재 객체의 스케일을 초기 스케일로 저장
-      this.state.initialScale = currentObjectScale ?? this.state.targetScale;
+      // 현재 객체의 스케일을 초기 스케일로 저장 (명시적으로 전달된 값 우선)
+      if (currentObjectScale !== undefined && currentObjectScale > 0) {
+        this.state.initialScale = currentObjectScale;
+      } else if (this.state.targetScale > 0) {
+        this.state.initialScale = this.state.targetScale;
+      } else {
+        this.state.initialScale = 1.0;
+      }
       this.state.targetScale = this.state.initialScale;
+      // 디버그 로그 제거 (성능 개선)
       return null;
     }
 
     // 초기 거리 대비 현재 거리의 비율로 스케일 계산
     const initialDist = this.state.lastScaleDist;
-    if (initialDist === 0) return null;
+    if (initialDist === 0 || initialDist < 0.01) {
+      // 거리가 너무 작으면 초기화
+      this.state.lastScaleDist = dist;
+      return null;
+    }
 
     const scaleRatio = dist / initialDist;
     let newScale = this.state.initialScale * scaleRatio;
     newScale = Math.max(0.2, Math.min(newScale, 5.0)); // Clamp
     this.state.targetScale = newScale;
 
+    // 디버그 로그 제거 (성능 개선)
     return this.state.targetScale;
   }
 

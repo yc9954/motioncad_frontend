@@ -358,6 +358,8 @@ export function Unified3DScene({
         }
       }
 
+      // targetScaleRef.current가 null이 아닐 때만 스케일링 적용 (더블 핀치일 때만)
+      // null이면 현재 스케일 유지 (싱글 핀치일 때 스케일 변경 방지)
       if (targetScaleRef.current !== null && selectedModelId) {
         const modelGroup = modelsRef.current.get(selectedModelId);
         if (modelGroup) {
@@ -748,7 +750,7 @@ export function Unified3DScene({
             return;
           }
 
-          console.log(`[Hand Gesture] Detected ${multiHandLandmarks.length} hand(s)`);
+          // 디버그 로그 제거 (성능 개선)
 
           // Convert landmarks to our format
           const convertLandmarks = (landmarks: any[]): Landmark[] => {
@@ -789,7 +791,6 @@ export function Unified3DScene({
           // Handle gestures based on priority (한 번에 하나의 제스처만)
           if (pinchingHands.length === 2 && worldPinchingHands.length === 2) {
             // Double Pinch - Scaling (최우선)
-            console.log('[Hand Gesture] Double pinch detected - scaling');
             // 현재 선택된 모델의 스케일 가져오기
             let currentObjectScale: number | undefined;
             if (selectedModelId) {
@@ -807,11 +808,11 @@ export function Unified3DScene({
               targetScaleRef.current = scale;
               targetPositionRef.current = null;
               targetRotationRef.current = null;
-              console.log(`[Hand Gesture] Target scale: ${scale}`);
             }
           } else if (pinchingHands.length === 1 && worldPinchingHands.length === 1) {
             // Single Pinch - Movement
-            console.log('[Hand Gesture] Single pinch detected - movement');
+            // 싱글 핀치일 때는 스케일을 명확히 null로 설정 (의도치 않은 스케일링 방지)
+            targetScaleRef.current = null;
             // 현재 선택된 모델의 위치 가져오기
             let currentObjectPosition: { x: number; y: number; z: number } | undefined;
             if (selectedModelId) {
@@ -831,19 +832,18 @@ export function Unified3DScene({
             );
             if (position) {
               targetPositionRef.current = position;
-              targetScaleRef.current = null;
               targetRotationRef.current = null;
-              console.log(`[Hand Gesture] Target position:`, position);
+            } else {
+              // 핀치가 시작 중이지만 아직 드래그가 시작되지 않았을 때도 스케일은 null 유지
+              targetPositionRef.current = null;
             }
           } else if (rotationHand && pinchingHands.length === 0) {
             // Spider-Man - Rotation (핀치가 없을 때만)
-            console.log('[Hand Gesture] Spider-Man gesture detected - rotation');
             const rotation = gestureControllerRef.current.handleRotation(rotationHand);
             if (rotation) {
               targetRotationRef.current = rotation;
               targetPositionRef.current = null;
               targetScaleRef.current = null;
-              console.log(`[Hand Gesture] Target rotation:`, rotation);
             }
           } else {
             // No active gesture
