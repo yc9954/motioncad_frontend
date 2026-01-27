@@ -229,17 +229,17 @@ const Sidebar = React.forwardRef<
         data-side={side}
         {...props}
       >
-        <div
-          data-sidebar="sidebar"
-          data-collapsible={!open ? collapsible : ""}
-          className={cn(
+          <div
+            data-sidebar="sidebar"
+            data-collapsible={!open ? collapsible : ""}
+            className={cn(
             "flex h-full w-full flex-col",
-            "transition-opacity duration-300 ease-in-out",
-            open ? "opacity-100" : "opacity-0 pointer-events-none"
-          )}
-        >
-          {children}
-        </div>
+              "transition-opacity duration-300 ease-in-out",
+              open ? "opacity-100" : "opacity-0 pointer-events-none"
+            )}
+          >
+            {children}
+          </div>
       </div>
     );
   }

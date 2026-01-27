@@ -150,11 +150,11 @@ export function Unified3DScene({
     renderer.shadowMap.needsUpdate = true;
     // Three.js r128에서는 outputEncoding 대신 colorSpace 사용
     if (renderer.outputEncoding !== undefined) {
-      renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.outputEncoding = THREE.sRGBEncoding;
     }
     if (renderer.toneMapping !== undefined) {
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.2;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
     }
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;

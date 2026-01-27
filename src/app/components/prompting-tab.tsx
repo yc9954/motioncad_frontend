@@ -185,13 +185,17 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   // 초기 모델 로드 (대시보드에서 프로젝트 클릭 시)
   useEffect(() => {
     if (initialModelUrl && initialModelName) {
-      // 이미 같은 모델이 있는지 확인
-      const existingModel = sceneModels.find(m => m.modelUrl === initialModelUrl);
+      // 이미 같은 모델이 있는지 확인 (URL과 이름으로 비교)
+      const existingModel = sceneModels.find(
+        m => m.modelUrl === initialModelUrl && m.name === initialModelName
+      );
+      
       if (!existingModel) {
+        // 씬이 비어있으면 중앙에, 아니면 오프셋 적용
         const offset = sceneModels.length * 0.5;
-        const centerX = offset;
+        const centerX = sceneModels.length === 0 ? 0 : offset;
         const centerY = 0;
-        const centerZ = offset;
+        const centerZ = sceneModels.length === 0 ? 0 : offset;
         
         const newModel: SceneModel = {
           id: `initial-${Date.now()}`,
@@ -207,9 +211,12 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         setSceneModels((prev) => [...prev, newModel]);
         setSelectedModelIds([newModel.id]);
         toast.success(`${initialModelName}이(가) 씬에 추가되었습니다.`);
+      } else {
+        // 이미 있는 모델이면 선택만
+        setSelectedModelIds([existingModel.id]);
       }
     }
-  }, [initialModelUrl, initialModelName, sceneModels]);
+  }, [initialModelUrl, initialModelName]); // sceneModels 의존성 제거하여 무한 루프 방지
 
   // 추천 에셋 썸네일 생성 (GLB에서 생성 시도, 실패하면 하드코딩된 썸네일 사용)
   useEffect(() => {

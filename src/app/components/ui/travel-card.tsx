@@ -56,11 +56,11 @@ const TravelCard = React.forwardRef<HTMLDivElement, TravelCardProps>(
           />
         )}
 
-        {/* Gradient Overlay for Text Readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-20"></div>
+        {/* Gradient Overlay for Text Readability - 하단 그라데이션 강화 */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent z-20"></div>
 
         {/* Content Container */}
-        <div className="relative flex h-full flex-col justify-between p-4 text-card-foreground z-30">
+        <div className="relative flex h-full flex-col p-4 text-card-foreground z-30 overflow-hidden">
           {/* Top Section: Logo */}
           <div className="flex h-20 items-start">
              {logo && (
@@ -70,17 +70,24 @@ const TravelCard = React.forwardRef<HTMLDivElement, TravelCardProps>(
              )}
           </div>
           
-          {/* Middle Section: Details */}
-          <div className="space-y-2">
-            <div>
-              <h3 className="text-xl font-bold text-white">{title}</h3>
-              <p className="text-xs text-white/80">{location}</p>
+          {/* 헤더와 설명글을 함께 감싸서 호버 시 올라가도록 */}
+          <div className="absolute bottom-0 left-0 right-0 transform translate-y-0 group-hover:-translate-y-20 transition-transform duration-300 ease-in-out">
+            {/* 헤더 (제목, 위치) - 기본 상태에서 카드 가장 아래에 위치 */}
+            <div className="p-4 space-y-2">
+              <div>
+                <h3 className="text-xl font-bold text-white">{title}</h3>
+                <p className="text-xs text-white/80">{location}</p>
+              </div>
             </div>
-            <div>
-              <h4 className="text-xs font-semibold text-white/90 mb-1">OVERVIEW</h4>
-              <p className="text-xs text-white/70 leading-relaxed line-clamp-2">
-                {overview}
-              </p>
+
+            {/* Overview - 호버 시 아래에서 올라오면서 표시 */}
+            <div className="absolute top-full left-0 right-0 px-4 pb-4 opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all duration-300 ease-in-out">
+              <div className="space-y-2 pt-2 border-t border-white/20">
+                <h4 className="text-xs font-semibold text-white/90 mb-1">OVERVIEW</h4>
+                <p className="text-xs text-white/70 leading-relaxed line-clamp-2">
+                  {overview}
+                </p>
+              </div>
             </div>
           </div>
         </div>

@@ -157,6 +157,23 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
   const [projectThumbnails, setProjectThumbnails] = useState<Record<number, string>>({});
   const [selectedProject, setSelectedProject] = useState<{ glbUrl: string; name: string } | null>(null);
 
+  // 프로젝트 클릭 핸들러 - GLB URL을 찾아서 편집 탭으로 이동
+  const onProjectClick = (project: ProjectResponse) => {
+    // mockProjects에서 프로젝트 ID로 GLB URL 찾기
+    const mockProject = mockProjects.find(p => p.id === project.id);
+    if (mockProject?.glbUrl) {
+      setSelectedProject({
+        glbUrl: mockProject.glbUrl,
+        name: project.title
+      });
+      // 편집 탭으로 자동 전환
+      setActiveTab("prompting");
+      toast.success(`${project.title}을(를) 편집 탭에서 엽니다.`);
+    } else {
+      toast.error("GLB 파일을 찾을 수 없습니다.");
+    }
+  };
+
   // 백엔드에서 프로젝트 목록 가져오기 (백그라운드에서 시도)
   useEffect(() => {
     const loadProjects = async () => {
