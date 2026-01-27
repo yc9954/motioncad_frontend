@@ -78,4 +78,11 @@ export class OneEuroFilter {
     this.x.lastValue = 0;
     this.dx.lastValue = 0;
   }
+
+  // 특정 값으로 필터를 리셋 (새 핀치 시작 시 현재 손 위치로 초기화)
+  resetWithValue(value: number): void {
+    this.lastTime = null;
+    this.x.lastValue = value;
+    this.dx.lastValue = 0;
+  }
 }

@@ -69,10 +69,11 @@ export class HandGestureController {
       rotationY: 0,
       filters: {
         // 드래그 반응성을 높이기 위해 필터 파라미터 조정
-        // mincutoff를 낮추고 beta를 높여서 빠른 움직임에 더 잘 반응하도록
-        x: new OneEuroFilter(30, 0.8, 0.01),
-        y: new OneEuroFilter(30, 0.8, 0.01),
-        z: new OneEuroFilter(30, 0.8, 0.01),
+        // mincutoff를 낮추고 beta를 높여서 빠른 움직임(특히 좌우)에 더 잘 반응하도록
+        // freq: 30Hz, mincutoff: 0.3 (낮을수록 부드럽지만 지연), beta: 0.5 (높을수록 빠른 움직임에 반응)
+        x: new OneEuroFilter(30, 0.3, 0.5),
+        y: new OneEuroFilter(30, 0.3, 0.5),
+        z: new OneEuroFilter(30, 0.5, 0.3),
       },
       poolVector: { x: 0, y: 0, z: 0 },
       initialPinchPosition: null,
@@ -156,15 +157,15 @@ export class HandGestureController {
     // 3D Unprojection
     const ndcX = (1 - middleMCP.x) * 2 - 1;
     const ndcY = -(middleMCP.y * 2 - 1);
-    
+
     this.state.poolVector = { x: ndcX, y: ndcY, z: zNDC };
-    
+
     // Unproject to world coordinates
     if (!(window as any).THREE) {
       console.error('[Hand Gesture] Three.js not loaded');
       return null;
     }
-    
+
     const THREE = (window as any).THREE;
     const vector = new THREE.Vector3(
       this.state.poolVector.x,
@@ -173,29 +174,38 @@ export class HandGestureController {
     );
     vector.unproject(this.camera);
 
-    // Apply 1€ Filter
+    // 핀치가 시작될 때 필터를 현재 위치로 리셋하여 이전 상태 영향 제거
+    if (!this.state.isPinching) {
+      // 필터를 현재 raw 값으로 리셋 (이전 핀치 위치의 영향 제거)
+      this.state.filters.x.resetWithValue(vector.x);
+      this.state.filters.y.resetWithValue(vector.y);
+      this.state.filters.z.resetWithValue(vector.z);
+
+      this.state.isPinching = true;
+      this.state.isDragging = false; // 아직 드래그 시작 전
+
+      // 현재 raw 위치를 초기 핀치 위치로 저장 (필터 적용 없이)
+      const rawHandPosition = { x: vector.x, y: vector.y, z: vector.z };
+      this.state.initialPinchPosition = { ...rawHandPosition };
+
+      // 객체의 현재 위치를 초기 위치로 저장
+      if (currentObjectPosition) {
+        this.state.initialObjectPosition = { ...currentObjectPosition };
+      } else {
+        // 객체 위치가 제공되지 않으면 손 위치를 기준으로 설정
+        this.state.initialObjectPosition = { ...rawHandPosition };
+      }
+      // 핀치 시작 시점에서는 객체를 움직이지 않음
+      return null;
+    }
+
+    // Apply 1€ Filter (핀치 진행 중일 때만)
     const timestamp = performance.now();
     const filteredX = this.state.filters.x.filter(vector.x, timestamp);
     const filteredY = this.state.filters.y.filter(vector.y, timestamp);
     const filteredZ = this.state.filters.z.filter(vector.z, timestamp);
 
     const currentHandPosition = { x: filteredX, y: filteredY, z: filteredZ };
-
-    // 핀치가 시작될 때 초기 위치 저장 (드래그 시작 전)
-    if (!this.state.isPinching) {
-      this.state.isPinching = true;
-      this.state.isDragging = false; // 아직 드래그 시작 전
-      this.state.initialPinchPosition = { ...currentHandPosition };
-      // 객체의 현재 위치를 초기 위치로 저장
-      if (currentObjectPosition) {
-        this.state.initialObjectPosition = { ...currentObjectPosition };
-      } else {
-        // 객체 위치가 제공되지 않으면 손 위치를 기준으로 설정
-        this.state.initialObjectPosition = { ...currentHandPosition };
-      }
-      // 핀치 시작 시점에서는 객체를 움직이지 않음
-      return null;
-    }
 
     // 핀치가 진행 중일 때: 손이 실제로 움직였는지 확인하여 드래그 시작
     if (!this.state.isDragging && this.state.initialPinchPosition) {
