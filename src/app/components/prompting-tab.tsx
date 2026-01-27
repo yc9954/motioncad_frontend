@@ -1771,10 +1771,13 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               webcamEnabled={webcamEnabled}
               transferMode={transferMode}
               onTransferStateChange={(state) => {
-                if (state === 'sending') {
-                  toast.info('GLB 파일 전송 중...');
-                } else if (state === 'receiving') {
-                  toast.info('GLB 파일 수신 중...');
+                // transferMode에 따라 적절한 로그만 출력
+                if (state === 'sending' && transferMode === 'send') {
+                  // 전송 모드일 때만 전송 로그 출력
+                  // toast는 handleSendGLB에서 이미 출력하므로 여기서는 생략
+                } else if (state === 'receiving' && transferMode === 'receive') {
+                  // 수신 모드일 때만 수신 로그 출력
+                  // toast는 handleReceiveGLB에서 이미 출력하므로 여기서는 생략
                 }
               }}
             />

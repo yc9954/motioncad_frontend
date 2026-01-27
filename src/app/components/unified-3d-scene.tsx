@@ -1003,6 +1003,12 @@ export function Unified3DScene({
 
         // GLB 파일 전송 함수
         const handleSendGLB = async () => {
+          // 전송 모드가 아니면 호출하지 않음
+          if (transferMode !== 'send') {
+            console.warn('[Transfer] 전송 모드가 아닌데 handleSendGLB가 호출됨');
+            return;
+          }
+
           // 이미 전송 중이면 중복 호출 방지
           if (transferStateRef.current === 'sending') {
             console.log('[Transfer] 이미 전송 중입니다.');
@@ -1011,6 +1017,9 @@ export function Unified3DScene({
 
           try {
             transferStateRef.current = 'sending';
+            if (onTransferStateChange) {
+              onTransferStateChange('sending');
+            }
             toast.info('GLB 파일 생성 중...');
             
             if (!sceneRef.current || !(window as any).THREE) {
@@ -1130,7 +1139,8 @@ export function Unified3DScene({
             toast.info('서버로 업로드 중...');
             const result = await transferApi.uploadGLB(glbFile);
             
-            toast.success(`전송 완료! 파일 ID: ${result.fileId}`);
+            console.log('[Transfer] 전송 완료, fileId:', result.fileId);
+            toast.success(`전송 완료! 파일 ID: ${result.fileId.substring(0, 8)}...`);
             transferStateRef.current = 'idle';
             if (onTransferStateChange) {
               onTransferStateChange('idle');
@@ -1147,11 +1157,19 @@ export function Unified3DScene({
 
         // GLB 파일 수신 함수
         const handleReceiveGLB = async () => {
+          // 수신 모드가 아니면 호출하지 않음
+          if (transferMode !== 'receive') {
+            console.warn('[Transfer] 수신 모드가 아닌데 handleReceiveGLB가 호출됨');
+            return;
+          }
+
           try {
+            console.log('[Transfer] 수신 시작 - 최신 파일 ID 확인 중...');
             // 최신 파일 ID 확인
             const latestFileId = await transferApi.getLatestFileId();
             
             if (!latestFileId) {
+              console.log('[Transfer] 수신할 파일이 없습니다.');
               toast.info('수신할 파일이 없습니다.');
               transferStateRef.current = 'idle';
               if (onTransferStateChange) {
@@ -1162,6 +1180,7 @@ export function Unified3DScene({
 
             // 이미 수신한 파일이면 스킵 (중복 수신 방지)
             if (latestFileId === lastCheckedFileIdRef.current) {
+              console.log('[Transfer] 이미 수신한 파일입니다:', latestFileId);
               toast.info('이미 수신한 최신 파일입니다. 새 파일이 업로드될 때까지 기다려주세요.');
               transferStateRef.current = 'idle';
               if (onTransferStateChange) {
@@ -1170,11 +1189,13 @@ export function Unified3DScene({
               return;
             }
 
+            console.log('[Transfer] 새 파일 발견, 다운로드 시작:', latestFileId);
             toast.info('GLB 파일 다운로드 중...');
             
             // 파일 다운로드
             const blob = await transferApi.downloadGLB(latestFileId);
             lastCheckedFileIdRef.current = latestFileId;
+            console.log('[Transfer] 파일 다운로드 완료, 씬에 로드 중...');
 
             // Blob을 URL로 변환
             const url = URL.createObjectURL(blob);
@@ -1201,6 +1222,7 @@ export function Unified3DScene({
                 sceneRef.current.add(modelGroup);
                 modelsRef.current.set(modelGroup.userData.modelId, modelGroup);
 
+                console.log('[Transfer] 수신 완료! 모델이 씬에 추가되었습니다.');
                 toast.success('수신 완료!');
                 transferStateRef.current = 'idle';
                 if (onTransferStateChange) {
