@@ -312,10 +312,21 @@ export function Unified3DScene({
         if (modelGroup) {
           const currentPos = modelGroup.position;
           const targetPos = targetPositionRef.current;
-          currentPos.lerp(
-            new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z),
-            damping
-          );
+          
+          // 핀치 드래그 중일 때는 즉시 위치 업데이트, 아닐 때만 부드럽게 보간
+          const isDragging = gestureControllerRef.current?.isDraggingActive() ?? false;
+          
+          if (isDragging) {
+            // 드래그 중: 즉시 위치 업데이트 (지연 없음)
+            currentPos.set(targetPos.x, targetPos.y, targetPos.z);
+          } else {
+            // 드래그 종료 후: 부드럽게 보간
+            currentPos.lerp(
+              new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z),
+              damping
+            );
+          }
+          
           if (callbacksRef.current.onModelDrag) {
             callbacksRef.current.onModelDrag(selectedModelId, {
               x: currentPos.x,
@@ -757,6 +768,7 @@ export function Unified3DScene({
           };
 
           // Priority: Double Pinch (scaling) > Single Pinch (movement) > Spider-Man (rotation)
+          // 핀치가 감지되면 로테이트는 무시 (명확한 상태 분리)
           const pinchingHands: Landmark[][] = [];
           const worldPinchingHands: WorldLandmark[][] = [];
           let rotationHand: Landmark[] | null = null;
@@ -768,14 +780,15 @@ export function Unified3DScene({
               if (multiHandWorldLandmarks && multiHandWorldLandmarks[index]) {
                 worldPinchingHands.push(convertWorldLandmarks(multiHandWorldLandmarks[index]));
               }
-            } else if (isSpiderman(converted)) {
+            } else if (isSpiderman(converted) && pinchingHands.length === 0) {
+              // 핀치가 없을 때만 로테이트 감지
               rotationHand = converted;
             }
           });
 
-          // Handle gestures based on priority
+          // Handle gestures based on priority (한 번에 하나의 제스처만)
           if (pinchingHands.length === 2 && worldPinchingHands.length === 2) {
-            // Double Pinch - Scaling
+            // Double Pinch - Scaling (최우선)
             console.log('[Hand Gesture] Double pinch detected - scaling');
             const scale = gestureControllerRef.current.handleScaling(
               pinchingHands[0],
@@ -813,8 +826,8 @@ export function Unified3DScene({
               targetRotationRef.current = null;
               console.log(`[Hand Gesture] Target position:`, position);
             }
-          } else if (rotationHand) {
-            // Spider-Man - Rotation
+          } else if (rotationHand && pinchingHands.length === 0) {
+            // Spider-Man - Rotation (핀치가 없을 때만)
             console.log('[Hand Gesture] Spider-Man gesture detected - rotation');
             const rotation = gestureControllerRef.current.handleRotation(rotationHand);
             if (rotation) {
