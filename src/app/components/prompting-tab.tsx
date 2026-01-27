@@ -9,7 +9,7 @@ import {
   Loader2, Sparkles, XCircle, Download, Plus, Image as ImageIcon,
   Grid3x3, Upload, X, Trash2, Copy, Eye, EyeOff, Lock, Unlock,
   Move, RotateCcw, Maximize2, Layers, FolderPlus, Save, FileDown,
-  ChevronDown, ChevronRight, GripVertical, Camera, Search
+  ChevronDown, ChevronRight, GripVertical, Camera, Search, CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
 import { generate3DModel, checkTaskStatus } from "@/lib/tripo-api";
@@ -18,13 +18,23 @@ import { Unified3DScene } from "@/app/components/unified-3d-scene";
 import { TravelCard } from "@/app/components/ui/travel-card";
 import { Dialog, DialogContent, DialogOverlay } from "@/app/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/app/components/ui/tabs";
-import { projectApi, assetApi, ComponentRequest, ProjectRequest } from "@/lib/api";
+import { projectApi, assetApi, partApi, ComponentRequest, ProjectRequest, PartType, PartCategory } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/app/components/ui/select";
+import { Label } from "@/app/components/ui/label";
+import { Progress } from "@/app/components/ui/progress";
 import { GlassCard } from "@/app/components/ui/glass-card";
 // import LiquidGlass from "liquid-glass-react";
 
 // 씬 모델 타입 정의
 interface SceneModel {
   id: string;
+  partId?: number; // 백엔드에서의 실제 파츠 ID
   modelUrl?: string;
   name: string;
   position: { x: number; y: number; z: number };
@@ -33,6 +43,19 @@ interface SceneModel {
   visible: boolean;
   locked: boolean;
   groupId?: string;
+  isUploaded?: boolean; // 서버에 업로드된 에셋인지 여부
+}
+
+// 백그라운드 업로드 상태 타입
+interface PendingUpload {
+  id: string;
+  name: string;
+  progress: number;
+  status: 'uploading' | 'processing' | 'completed' | 'error';
+  file: File;
+  previewUrl?: string;
+  type: PartType;
+  category: PartCategory;
 }
 
 // 모델 그룹 타입 정의
@@ -86,9 +109,11 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{
     id: string;
+    partId?: number;
     file: File;
     previewUrl?: string;
     type: "image" | "model";
+    isRegistered?: boolean;
   }>>([]);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [transformMode, setTransformMode] = useState<"position" | "rotation" | "scale">("position");
@@ -97,6 +122,21 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [webcamEnabled, setWebcamEnabled] = useState(false);
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // 파츠 업로드 다이얼로그 관련 상태
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [isUploadingPart, setIsUploadingPart] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadFileData, setUploadFileData] = useState<{
+    file: File;
+    previewUrl?: string;
+    name: string;
+    type: PartType;
+    category: PartCategory;
+  } | null>(null);
+
+  // 백그라운드 업로드 목록
+  const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
 
   // 첫 번째 선택된 모델 (단일 선택용)
   const selectedModelId = selectedModelIds.length === 1 ? selectedModelIds[0] : null;
@@ -112,50 +152,50 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     glbUrl: string;
     thumbnailUrl?: string;
   }>>([
-    { 
-      id: 1, 
-      name: "의자", 
-      thumbnail: "🪑", 
+    {
+      id: 1,
+      name: "의자",
+      thumbnail: "🪑",
       category: "가구",
       glbUrl: "https://threejs.org/examples/models/gltf/Chair/glTF-Binary/Chair.glb",
       thumbnailUrl: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop"
     },
-    { 
-      id: 2, 
-      name: "테이블", 
-      thumbnail: "🪑", 
+    {
+      id: 2,
+      name: "테이블",
+      thumbnail: "🪑",
       category: "가구",
       glbUrl: "https://threejs.org/examples/models/gltf/Duck/glTF-Binary/Duck.glb",
       thumbnailUrl: "https://images.unsplash.com/photo-1532372320572-cda25653a26d?w=400&h=300&fit=crop"
     },
-    { 
-      id: 3, 
-      name: "램프", 
-      thumbnail: "💡", 
+    {
+      id: 3,
+      name: "램프",
+      thumbnail: "💡",
       category: "조명",
       glbUrl: "https://threejs.org/examples/models/gltf/Lantern/glTF-Binary/Lantern.glb",
       thumbnailUrl: "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=400&h=300&fit=crop"
     },
-    { 
-      id: 4, 
-      name: "화분", 
-      thumbnail: "🪴", 
+    {
+      id: 4,
+      name: "화분",
+      thumbnail: "🪴",
       category: "장식",
       glbUrl: "https://threejs.org/examples/models/gltf/Avocado/glTF-Binary/Avocado.glb",
       thumbnailUrl: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=300&fit=crop"
     },
-    { 
-      id: 5, 
-      name: "책장", 
-      thumbnail: "📚", 
+    {
+      id: 5,
+      name: "책장",
+      thumbnail: "📚",
       category: "가구",
       glbUrl: "https://threejs.org/examples/models/gltf/DamagedHelmet/glTF-Binary/DamagedHelmet.glb",
       thumbnailUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=300&fit=crop"
     },
-    { 
-      id: 6, 
-      name: "소파", 
-      thumbnail: "🛋️", 
+    {
+      id: 6,
+      name: "소파",
+      thumbnail: "🛋️",
       category: "가구",
       glbUrl: "https://threejs.org/examples/models/gltf/FlightHelmet/glTF-Binary/FlightHelmet.glb",
       thumbnailUrl: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=400&h=300&fit=crop"
@@ -173,7 +213,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       }
       const blob = await response.blob();
       const file = new File([blob], 'model.glb', { type: 'model/gltf-binary' });
-      
+
       // 썸네일 생성
       return await generateThumbnailFromGLB(file);
     } catch (error) {
@@ -192,7 +232,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         const centerX = offset;
         const centerY = 0;
         const centerZ = offset;
-        
+
         const newModel: SceneModel = {
           id: `initial-${Date.now()}`,
           modelUrl: initialModelUrl,
@@ -203,7 +243,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           visible: true,
           locked: false,
         };
-        
+
         setSceneModels((prev) => [...prev, newModel]);
         setSelectedModelIds([newModel.id]);
         toast.success(`${initialModelName}이(가) 씬에 추가되었습니다.`);
@@ -258,7 +298,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     try {
       // Tripo AI API로 3D 모델 생성 요청
       const result = await generate3DModel(prompt, apiKey);
-      
+
       setStatus("생성 중...");
       toast.success("생성 요청이 성공적으로 전송되었습니다!");
 
@@ -308,10 +348,10 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     const poll = async () => {
       try {
         const result = await checkTaskStatus(taskId, apiKey);
-        
+
         // 진행률 가져오기 (응답 구조에 따라)
         const progress = result.data?.progress ?? null;
-        
+
         // 상태 및 진행률 업데이트
         const statusText = {
           queued: "대기 중",
@@ -323,27 +363,27 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           cancelled: "취소됨",
           unknown: "알 수 없음",
         }[result.status || ""] || result.status || "알 수 없음";
-        
+
         // 현재 모델의 진행률 계산
-        const currentProgress = progress !== null && progress !== undefined 
-          ? progress 
-          : result.status === "queued" 
-            ? 0 
-            : result.status === "running" 
-              ? 50 
+        const currentProgress = progress !== null && progress !== undefined
+          ? progress
+          : result.status === "queued"
+            ? 0
+            : result.status === "running"
+              ? 50
               : null;
 
         // 모델 상태 업데이트
-        setGeneratedModels((prev) => 
-          prev.map((m) => 
-            m.taskId === taskId 
+        setGeneratedModels((prev) =>
+          prev.map((m) =>
+            m.taskId === taskId
               ? {
-                  ...m,
-                  isLoading: result.status === "queued" || result.status === "running",
-                  progress: currentProgress ?? m.progress ?? 0,
-                  status: result.status || m.status,
-                  previewImageUrl: result.data?.output?.rendered_image || m.previewImageUrl,
-                }
+                ...m,
+                isLoading: result.status === "queued" || result.status === "running",
+                progress: currentProgress ?? m.progress ?? 0,
+                status: result.status || m.status,
+                previewImageUrl: result.data?.output?.rendered_image || m.previewImageUrl,
+              }
               : m
           )
         );
@@ -358,46 +398,46 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         } else {
           setStatus(`${statusText}...`);
         }
-        
+
         // Tripo AI API 상태: success, failed, banned, expired, cancelled, unknown
         if (result.status === "success") {
           // success 상태일 때 모델 URL 확인 (우선순위: model > pbr_model > base_model)
-          const modelUrl = 
-            result.model_url || 
-            result.data?.output?.model || 
-            result.data?.output?.pbr_model || 
+          const modelUrl =
+            result.model_url ||
+            result.data?.output?.model ||
+            result.data?.output?.pbr_model ||
             result.data?.output?.base_model;
-          
+
           // 미리보기 이미지 URL (rendered_image)
           const previewImageUrl = result.data?.output?.rendered_image;
-          
+
           setStatus("생성 완료");
           setTaskProgress(100);
           setTaskStatusDetail("생성 완료");
-          
-          setGeneratedModels((prev) => 
-            prev.map((m) => 
-              m.taskId === taskId 
+
+          setGeneratedModels((prev) =>
+            prev.map((m) =>
+              m.taskId === taskId
                 ? {
-                    ...m,
-                    modelUrl: modelUrl || m.modelUrl,
-                    downloadUrl: modelUrl || m.downloadUrl,
-                    previewImageUrl: previewImageUrl || m.previewImageUrl,
-                    isLoading: false,
-                    progress: 100,
-                    status: "success",
-                  }
+                  ...m,
+                  modelUrl: modelUrl || m.modelUrl,
+                  downloadUrl: modelUrl || m.downloadUrl,
+                  previewImageUrl: previewImageUrl || m.previewImageUrl,
+                  isLoading: false,
+                  progress: 100,
+                  status: "success",
+                }
                 : m
             )
           );
           setIsGenerating(false);
-          
+
           if (modelUrl) {
             toast.success("3D 모델이 성공적으로 생성되었습니다!");
           } else {
             toast.warning("모델 생성은 완료되었지만 다운로드 URL을 찾을 수 없습니다.");
           }
-          
+
           if (pollInterval) {
             clearTimeout(pollInterval);
           }
@@ -405,14 +445,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         }
 
         if (result.status === "failed" || result.status === "banned" || result.status === "expired" || result.status === "cancelled" || result.error) {
-          setGeneratedModels((prev) => 
-            prev.map((m) => 
-              m.taskId === taskId 
+          setGeneratedModels((prev) =>
+            prev.map((m) =>
+              m.taskId === taskId
                 ? {
-                    ...m,
-                    isLoading: false,
-                    status: result.status || "failed",
-                  }
+                  ...m,
+                  isLoading: false,
+                  status: result.status || "failed",
+                }
                 : m
             )
           );
@@ -429,14 +469,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           if (attempts < maxAttempts) {
             pollInterval = setTimeout(poll, 5000); // 5초 후 다시 확인
           } else {
-            setGeneratedModels((prev) => 
-              prev.map((m) => 
-                m.taskId === taskId 
+            setGeneratedModels((prev) =>
+              prev.map((m) =>
+                m.taskId === taskId
                   ? {
-                      ...m,
-                      isLoading: false,
-                      status: "timeout",
-                    }
+                    ...m,
+                    isLoading: false,
+                    status: "timeout",
+                  }
                   : m
               )
             );
@@ -447,14 +487,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
             throw new Error("생성 시간이 초과되었습니다. (30분) Task ID를 확인하여 나중에 다시 확인해주세요.");
           }
         } else {
-          setGeneratedModels((prev) => 
-            prev.map((m) => 
-              m.taskId === taskId 
+          setGeneratedModels((prev) =>
+            prev.map((m) =>
+              m.taskId === taskId
                 ? {
-                    ...m,
-                    isLoading: false,
-                    status: result.status || "unknown",
-                  }
+                  ...m,
+                  isLoading: false,
+                  status: result.status || "unknown",
+                }
                 : m
             )
           );
@@ -489,22 +529,22 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
     try {
       let downloadUrl = model.downloadUrl || model.modelUrl;
-      
+
       // 다운로드 URL이 없으면 Task 상태를 다시 확인하여 가져오기
       if (!downloadUrl && model.taskId && apiKey) {
         const taskStatus = await checkTaskStatus(model.taskId, apiKey);
-        
+
         // 모델 URL 우선순위: model > pbr_model > base_model
-        downloadUrl = 
-          taskStatus.model_url || 
-          taskStatus.data?.output?.model || 
-          taskStatus.data?.output?.pbr_model || 
+        downloadUrl =
+          taskStatus.model_url ||
+          taskStatus.data?.output?.model ||
+          taskStatus.data?.output?.pbr_model ||
           taskStatus.data?.output?.base_model;
-        
+
         if (downloadUrl) {
-          setGeneratedModels((prev) => 
-            prev.map((m) => 
-              m.taskId === model.taskId 
+          setGeneratedModels((prev) =>
+            prev.map((m) =>
+              m.taskId === model.taskId
                 ? { ...m, modelUrl: downloadUrl, downloadUrl }
                 : m
             )
@@ -539,21 +579,26 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       };
       setSceneModels((prev) => [...prev, newModel]);
       setSelectedModelIds([newModel.id]);
-      
+
       // AI 생성 모델인 경우 백엔드에 등록
       if (model.taskId && model.modelUrl) {
         try {
-          const partId = await assetApi.confirmAiAsset(
+          const partIdValue = await assetApi.confirmAiAsset(
             model.prompt || "3D 모델",
             model.modelUrl
           );
-          console.log('AI 에셋이 백엔드에 등록되었습니다:', partId);
+          console.log('AI 에셋이 백엔드에 등록되었습니다:', partIdValue);
+
+          // 씬의 모델 정보에 백엔드 partId 업데이트
+          setSceneModels(prev => prev.map(m =>
+            m.id === newModel.id ? { ...m, partId: partIdValue } : m
+          ));
         } catch (error) {
           console.error('AI 에셋 등록 실패:', error);
           // 에러가 발생해도 씬에는 추가됨
         }
       }
-      
+
       toast.success("씬에 추가되었습니다.");
     } else {
       toast.error("모델을 씬에 추가할 수 없습니다.");
@@ -671,15 +716,15 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     try {
       // 사용자 ID 가져오기 (임시로 localStorage에서, 나중에 인증 시스템으로 교체)
       const userId = parseInt(localStorage.getItem('userId') || '1', 10);
-      const currentProjectId = localStorage.getItem('currentProjectId') 
-        ? parseInt(localStorage.getItem('currentProjectId')!, 10) 
+      const currentProjectId = localStorage.getItem('currentProjectId')
+        ? parseInt(localStorage.getItem('currentProjectId')!, 10)
         : undefined;
 
       // 씬 모델을 컴포넌트 요청 형식으로 변환
       const components: ComponentRequest[] = sceneModels
         .filter(m => m.modelUrl && m.visible)
         .map(m => ({
-          partId: parseInt(m.id.replace(/\D/g, '')) || 0, // 임시: partId는 실제 Part ID여야 함
+          partId: m.partId || 0, // 백엔드에서 생성된 실제 partId 사용
           posX: m.position.x,
           posY: m.position.y,
           posZ: m.position.z,
@@ -701,7 +746,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
       // 백엔드에 저장
       const projectId = await projectApi.saveProject(userId, projectRequest, currentProjectId);
-      
+
       // 프로젝트 ID 저장
       localStorage.setItem('currentProjectId', projectId.toString());
 
@@ -709,20 +754,20 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     } catch (error) {
       console.error('프로젝트 저장 실패:', error);
       toast.error(error instanceof Error ? error.message : '프로젝트 저장에 실패했습니다.');
-      
+
       // 실패 시 로컬 스토리지에 백업 저장
-    const diorama: Diorama = {
-      id: `diorama-${Date.now()}`,
-      name: dioramaName,
-      models: [...sceneModels],
-      groups: [...modelGroups],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    const existingDioramas = JSON.parse(localStorage.getItem("dioramas") || "[]");
-    existingDioramas.push(diorama);
-    localStorage.setItem("dioramas", JSON.stringify(existingDioramas));
-    setSavedDioramas((prev) => [...prev, diorama]);
+      const diorama: Diorama = {
+        id: `diorama-${Date.now()}`,
+        name: dioramaName,
+        models: [...sceneModels],
+        groups: [...modelGroups],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const existingDioramas = JSON.parse(localStorage.getItem("dioramas") || "[]");
+      existingDioramas.push(diorama);
+      localStorage.setItem("dioramas", JSON.stringify(existingDioramas));
+      setSavedDioramas((prev) => [...prev, diorama]);
     }
   }, [dioramaName, sceneModels, modelGroups]);
 
@@ -848,13 +893,13 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     try {
       // Three.js와 GLTFLoader 로드
       if (!(window as any).THREE) {
-      const threeScript = document.createElement('script');
-      threeScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+        const threeScript = document.createElement('script');
+        threeScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
         await new Promise((resolve, reject) => {
           threeScript.onload = () => resolve(undefined);
-      threeScript.onerror = () => reject(new Error('Three.js 로드 실패'));
-      document.head.appendChild(threeScript);
-    });
+          threeScript.onerror = () => reject(new Error('Three.js 로드 실패'));
+          document.head.appendChild(threeScript);
+        });
       }
 
       const THREE = (window as any).THREE;
@@ -877,16 +922,16 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       }
 
       // 오프스크린 렌더러 생성
-      const width = 512;
-      const height = 512;
-      const pixelRatio = Math.min(window.devicePixelRatio, 2);
-      const renderer = new THREE.WebGLRenderer({ 
-        antialias: true, 
+      const width = 256; // 512에서 256으로 축소
+      const height = 256;
+      const pixelRatio = 1; // 픽셀 배율 고정 (성능 최적화)
+      const renderer = new THREE.WebGLRenderer({
+        antialias: false, // 안티앨리어싱 비활성화 (속도 우선)
         alpha: true,
         preserveDrawingBuffer: true,
         powerPreference: "high-performance",
       });
-      renderer.setSize(width * pixelRatio, height * pixelRatio, false);
+      renderer.setSize(width, height, false);
       renderer.setPixelRatio(pixelRatio);
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -904,12 +949,12 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       // 조명 설정
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
       scene.add(ambientLight);
-      
+
       const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1);
       directionalLight1.position.set(5, 10, 5);
       directionalLight1.castShadow = true;
       scene.add(directionalLight1);
-      
+
       const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
       directionalLight2.position.set(-5, 5, -5);
       scene.add(directionalLight2);
@@ -919,7 +964,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
       // 모델 로드
       const loader = new GLTFLoader();
-      
+
       return new Promise((resolve) => {
         loader.load(
           fileUrl,
@@ -929,7 +974,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
               // 모델 바운딩 박스 계산
               const box = new THREE.Box3().setFromObject(model);
-              
+
               if (box.isEmpty()) {
                 throw new Error('모델이 비어있습니다.');
               }
@@ -937,7 +982,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               const center = box.getCenter(new THREE.Vector3());
               const size = box.getSize(new THREE.Vector3());
               const maxDim = Math.max(size.x, size.y, size.z);
-              
+
               if (maxDim === 0) {
                 throw new Error('모델 크기가 0입니다.');
               }
@@ -961,9 +1006,9 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               // 렌더링
               renderer.render(scene, camera);
 
-              // 이미지로 변환
-              const dataURL = renderer.domElement.toDataURL('image/png', 1.0);
-              
+              // 이미지로 변환 (JPEG 0.7 품질로 압축률 향상)
+              const dataURL = renderer.domElement.toDataURL('image/jpeg', 0.7);
+
               // 정리
               URL.revokeObjectURL(fileUrl);
               renderer.dispose();
@@ -1032,28 +1077,135 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
       if (isImage) {
         previewUrl = URL.createObjectURL(file);
-      } else if (isModel && fileExtension === ".glb") {
-        // GLB 파일인 경우 썸네일 생성
-        toast.info(`${file.name} 썸네일 생성 중...`);
-        const thumbnail = await generateThumbnailFromGLB(file);
-        previewUrl = thumbnail || undefined;
-        if (!previewUrl) {
-          toast.warning(`${file.name} 썸네일 생성에 실패했습니다.`);
+
+        setUploadedFiles((prev) => [
+          ...prev,
+          {
+            id: fileId,
+            file,
+            previewUrl,
+            type: "image",
+          },
+        ]);
+        toast.success(`${file.name}이(가) 업로드되었습니다.`);
+      } else if (isModel) {
+        // 3D 모델 파일인 경우 정보 입력창 즉시 띄우기 (Non-blocking)
+        const partialData = {
+          file,
+          previewUrl: undefined,
+          name: file.name.replace(/\.[^/.]+$/, ""),
+          type: 'OBJECT' as PartType,
+          category: 'FURNITURE_HOME' as PartCategory
+        };
+
+        setUploadFileData(partialData);
+        setIsUploadDialogOpen(true);
+        toast.info(`${file.name} 정보를 확인해주세요.`);
+
+        // 썸네일은 백그라운드에서 생성
+        if (fileExtension === ".glb") {
+          generateThumbnailFromGLB(file).then(thumbnail => {
+            if (thumbnail) {
+              setUploadFileData(prev => prev ? { ...prev, previewUrl: thumbnail } : null);
+            }
+          });
         }
       }
-
-      setUploadedFiles((prev) => [
-        ...prev,
-        {
-          id: fileId,
-          file,
-          previewUrl,
-          type: isImage ? "image" : "model",
-        },
-      ]);
-
-      toast.success(`${file.name}이(가) 업로드되었습니다.`);
     }
+  };
+
+  // 파츠 업로드 확정 핸들러 (백그라운드 처리)
+  const handleConfirmUpload = () => {
+    if (!uploadFileData) return;
+
+    const uploadId = `upload-${Date.now()}`;
+    const fileId = `file-${Date.now()}-${Math.random()}`; // 로컬 식별용 ID 생성
+
+    // 1. 업로드 큐에 추가할 펜딩 객체
+    const newPending: PendingUpload = {
+      id: uploadId,
+      name: uploadFileData.name,
+      progress: 0,
+      status: 'uploading',
+      file: uploadFileData.file,
+      previewUrl: uploadFileData.previewUrl,
+      type: uploadFileData.type,
+      category: uploadFileData.category,
+    };
+
+    // 2. [변경] response 기다리지 않고 즉시 목록에 추가 (Pending 상태)
+    setUploadedFiles((prev) => [
+      ...prev,
+      {
+        id: fileId,
+        file: uploadFileData.file,
+        previewUrl: uploadFileData.previewUrl,
+        type: "model",
+        isRegistered: false,
+        isPending: true, // 로컬 전용 플래그
+      },
+    ]);
+
+    // 3. 팝업 즉시 닫기
+    setPendingUploads(prev => [...prev, newPending]);
+    setIsUploadDialogOpen(false);
+
+    const currentUploadData = { ...uploadFileData }; // 캡처
+    setUploadFileData(null);
+    setUploadProgress(0);
+
+    toast.info(`"${currentUploadData.name}" 업로드를 시작합니다.`);
+
+    // 4. 백그라운드에서 실제 업로드 수행
+    partApi.uploadPart(
+      currentUploadData.name,
+      currentUploadData.type,
+      currentUploadData.category,
+      currentUploadData.file,
+      (progress) => {
+        setPendingUploads(prev => prev.map(u =>
+          u.id === uploadId ? {
+            ...u,
+            progress,
+            status: progress === 100 ? 'processing' : 'uploading'
+          } : u
+        ));
+      }
+    ).then(partId => {
+      // 성공 시: 목록 정보 업데이트 및 씬 동기화
+      setUploadedFiles(prev => prev.map(f =>
+        f.id === fileId ? { ...f, partId, isRegistered: true, isPending: false } : f
+      ));
+
+      // 씬에 이미 배치된 모델이 있다면 partId 동기화
+      setSceneModels(prev => prev.map(m =>
+        m.id === fileId ? { ...m, partId } : m
+      ));
+
+      // 펜딩 상태 완료 처리 후 3초 뒤에 제거
+      setPendingUploads(prev => prev.map(u =>
+        u.id === uploadId ? { ...u, progress: 100, status: 'completed' } : u
+      ));
+
+      setTimeout(() => {
+        setPendingUploads(prev => prev.filter(u => u.id !== uploadId));
+      }, 3000);
+
+      toast.success(`"${currentUploadData.name}" 등록 완료!`);
+    }).catch(error => {
+      console.error('Background part upload failed:', error);
+
+      // 실패 시: 목록에서 Pending 상태 해제 (필요시 삭제 처리도 가능)
+      setUploadedFiles(prev => prev.map(f =>
+        f.id === fileId ? { ...f, isPending: false } : f
+      ));
+
+      setPendingUploads(prev => prev.map(u =>
+        u.id === uploadId ? { ...u, status: 'error' } : u
+      ));
+
+      toast.error(`"${currentUploadData.name}" 등록 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+    });
   };
 
   // 파일 삭제 핸들러
@@ -1096,9 +1248,11 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   };
 
   // 드래그 시작 핸들러
-  const handleDragStart = (e: React.DragEvent, asset: { modelUrl?: string; prompt?: string; taskId?: string; name?: string; thumbnail?: string; category?: string; file?: File; previewUrl?: string }) => {
+  const handleDragStart = (e: React.DragEvent, asset: { id?: number; partId?: number; modelUrl?: string; prompt?: string; taskId?: string; name?: string; thumbnail?: string; category?: string; file?: File; previewUrl?: string }) => {
     const dragData = {
       type: asset.modelUrl ? "generated" : asset.file ? "uploaded" : "recommended",
+      id: asset.id,
+      partId: asset.partId,
       modelUrl: asset.modelUrl,
       prompt: asset.prompt,
       taskId: asset.taskId,
@@ -1125,7 +1279,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     try {
       // 드래그 데이터 가져오기
       let dragDataStr = e.dataTransfer.getData("application/json");
-      
+
       // 데이터가 없으면 다른 형식으로 시도
       if (!dragDataStr) {
         // 파일이 직접 드롭된 경우
@@ -1149,6 +1303,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       if (dragData.type === "generated" && dragData.modelUrl) {
         const newModel: SceneModel = {
           id: dragData.taskId || `model-${Date.now()}`,
+          partId: dragData.id,
           modelUrl: dragData.modelUrl,
           name: dragData.name || dragData.prompt || "3D 모델",
           position: { x: centerX, y: centerY, z: centerZ },
@@ -1169,6 +1324,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
             const fileUrl = URL.createObjectURL(uploadedFile.file);
             const newModel: SceneModel = {
               id: uploadedFile.id,
+              partId: uploadedFile.partId,
               modelUrl: fileUrl,
               name: uploadedFile.file.name,
               position: { x: centerX, y: centerY, z: centerZ },
@@ -1176,6 +1332,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               scale: 1,
               visible: true,
               locked: false,
+              isUploaded: uploadedFile.isRegistered,
             };
             setSceneModels((prev) => [...prev, newModel]);
             setSelectedModelIds([newModel.id]);
@@ -1191,9 +1348,10 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         const centerX = offset;
         const centerY = 0;
         const centerZ = offset;
-        
+
         const newModel: SceneModel = {
           id: `recommended-${dragData.name}-${Date.now()}`,
+          partId: dragData.id,
           modelUrl: dragData.modelUrl,
           name: dragData.name || "추천 에셋",
           position: { x: centerX, y: centerY, z: centerZ },
@@ -1229,7 +1387,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     const target = e.currentTarget as HTMLElement;
     const relatedTarget = e.relatedTarget as HTMLElement | null;
     if (!relatedTarget || !target.contains(relatedTarget)) {
-    setIsDraggingOver(false);
+      setIsDraggingOver(false);
     }
   };
 
@@ -1358,83 +1516,82 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       <div className="w-80 border-r bg-sidebar flex flex-col">
         <div className="p-4 border-b">
           <h2 className="text-lg font-semibold mb-4">모델 생성</h2>
-          
+
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2">
-                  프롬프트 입력
-                </label>
-                <Textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="원하는 3D 모델을 설명해주세요..."
+                프롬프트 입력
+              </label>
+              <Textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="원하는 3D 모델을 설명해주세요..."
                 className="min-h-[120px] bg-background resize-none"
-                  disabled={isGenerating}
-                />
-              </div>
+                disabled={isGenerating}
+              />
+            </div>
 
-              <Button
-                onClick={handleGenerate}
-                disabled={isGenerating || !prompt.trim() || !apiKey}
+            <Button
+              onClick={handleGenerate}
+              disabled={isGenerating || !prompt.trim() || !apiKey}
               className="w-full"
               size="lg"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {status || "생성 중..."}
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    모델 생성
-                  </>
-                )}
-              </Button>
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {status || "생성 중..."}
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  모델 생성
+                </>
+              )}
+            </Button>
 
-              {isGenerating && (
+            {isGenerating && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{taskStatusDetail || "요청 중..."}</span>
-                    {taskProgress !== null && (
-                    <span className="font-semibold text-primary">{taskProgress}%</span>
-                    )}
-                  </div>
+                  <span className="text-muted-foreground">{taskStatusDetail || "요청 중..."}</span>
                   {taskProgress !== null && (
-                  <div className="w-full bg-muted rounded-full h-2">
-                      <div
-                      className="bg-primary h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${Math.min(taskProgress, 100)}%` }}
-                      />
-                    </div>
+                    <span className="font-semibold text-primary">{taskProgress}%</span>
                   )}
                 </div>
-              )}
+                {taskProgress !== null && (
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.min(taskProgress, 100)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
-              {error && (
-                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+            {error && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
                 <div className="flex items-center gap-2 text-destructive text-sm">
                   <XCircle className="h-4 w-4" />
                   <span>{error}</span>
-                  </div>
                 </div>
-              )}
+              </div>
+            )}
           </div>
-            </div>
+        </div>
 
         {/* 설정 섹션 */}
         <div className="p-4 space-y-4 border-t overflow-y-auto flex-shrink-0">
           {/* 파일 업로드 영역 */}
           <div>
             <label className="block text-sm font-medium mb-2">
-                  파일 업로드
-                </label>
+              파일 업로드
+            </label>
             <div
-              className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
-                isDraggingFile
-                  ? "border-primary bg-primary/10"
-                  : "border-muted-foreground/25 hover:border-muted-foreground/50"
-              }`}
+              className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${isDraggingFile
+                ? "border-primary bg-primary/10"
+                : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                }`}
               onDragOver={handleFileDragOver}
               onDragLeave={handleFileDragLeave}
               onDrop={handleFileDrop}
@@ -1454,11 +1611,11 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 <Upload className="h-8 w-8 text-muted-foreground" />
                 <div className="text-sm">
                   <span className="text-primary hover:underline">클릭하여 업로드</span>
-                    <span className="text-muted-foreground"> 또는 드래그 앤 드롭</span>
-                  </div>
+                  <span className="text-muted-foreground"> 또는 드래그 앤 드롭</span>
+                </div>
                 <p className="text-xs text-muted-foreground">
                   JPG, PNG, WEBP (≤5MB) 또는 GLB, OBJ, FBX, STL (≤100MB)
-                  </p>
+                </p>
               </label>
             </div>
 
@@ -1466,11 +1623,10 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
             {uploadedFiles.length > 0 && (
               <div className="mt-3 space-y-2">
                 {uploadedFiles.map((uploadedFile) => (
-                  <Card 
-                    key={uploadedFile.id} 
-                    className={`relative overflow-hidden ${
-                      uploadedFile.type === "model" ? "cursor-grab active:cursor-grabbing" : ""
-                    }`}
+                  <Card
+                    key={uploadedFile.id}
+                    className={`relative overflow-hidden ${uploadedFile.type === "model" ? "cursor-grab active:cursor-grabbing" : ""
+                      }`}
                     draggable={uploadedFile.type === "model"}
                     onDragStart={(e) => handleDragStart(e, {
                       file: uploadedFile.file,
@@ -1500,8 +1656,21 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                           <ImageIcon className="h-8 w-8 text-muted-foreground" />
                         </div>
                       )}
+
+                      {/* 상태 뱃지 */}
+                      {(uploadedFile as any).isPending ? (
+                        <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-amber-500 text-white text-[9px] font-bold rounded flex items-center gap-1 shadow-sm uppercase animate-pulse">
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                          Pending...
+                        </div>
+                      ) : (uploadedFile as any).isRegistered && (
+                        <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-green-500/90 text-white text-[9px] font-bold rounded flex items-center gap-1 shadow-sm uppercase">
+                          <CheckCircle2 className="h-2.5 w-2.5" />
+                          Registered
+                        </div>
+                      )}
                     </div>
-                    
+
                     {/* 파일 정보 영역 */}
                     <div className="p-3 space-y-1">
                       <p className="text-xs font-medium truncate leading-tight">{uploadedFile.file.name}</p>
@@ -1509,7 +1678,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                         {(uploadedFile.file.size / 1024 / 1024).toFixed(2)} MB
                       </p>
                     </div>
-                    
+
                     {/* 삭제 버튼 - 우상단 */}
                     <Button
                       size="sm"
@@ -1526,86 +1695,86 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 ))}
               </div>
             )}
-              </div>
-            </div>
+          </div>
+        </div>
 
         {/* 생성된 에셋 목록 (왼쪽 패널 하단) */}
         <div className="p-4 border-t overflow-y-auto flex-1">
           <h3 className="text-sm font-semibold mb-3">생성된 에셋</h3>
-            {generatedModels.length > 0 ? (
+          {generatedModels.length > 0 ? (
             <div className="space-y-2">
-                {generatedModels.map((model, index) => (
+              {generatedModels.map((model, index) => (
                 <Card key={index} className="overflow-hidden">
-                    <div className="aspect-video bg-muted overflow-hidden relative">
-                      {model.modelUrl && !model.isLoading ? (
-                        <div className="w-full h-full">
-                          <ModelViewer
-                            src={model.modelUrl}
-                            alt="3D 모델"
-                            className="w-full h-full"
-                          />
-                        </div>
-                      ) : model.previewImageUrl && !model.isLoading ? (
-                        <img
-                          src={model.previewImageUrl}
-                          alt="미리보기"
-                          className="w-full h-full object-cover"
+                  <div className="aspect-video bg-muted overflow-hidden relative">
+                    {model.modelUrl && !model.isLoading ? (
+                      <div className="w-full h-full">
+                        <ModelViewer
+                          src={model.modelUrl}
+                          alt="3D 모델"
+                          className="w-full h-full"
                         />
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-muted p-3">
-                          <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
-                          {model.progress !== undefined && model.progress !== null && (
-                            <>
-                              <div className="w-full bg-background/50 rounded-full h-1.5 mb-1">
-                                <div
-                                  className="bg-primary h-1.5 rounded-full transition-all duration-300"
-                                  style={{ width: `${Math.min(model.progress, 100)}%` }}
-                                />
-                              </div>
-                              <span className="text-xs font-medium text-foreground">
-                                {model.progress}%
-                              </span>
-                            </>
-                          )}
-                          {(!model.progress && model.progress !== 0) && (
-                            <span className="text-xs text-muted-foreground">
-                              {model.status === "queued" ? "대기 중..." : "생성 중..."}
+                      </div>
+                    ) : model.previewImageUrl && !model.isLoading ? (
+                      <img
+                        src={model.previewImageUrl}
+                        alt="미리보기"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-muted p-3">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
+                        {model.progress !== undefined && model.progress !== null && (
+                          <>
+                            <div className="w-full bg-background/50 rounded-full h-1.5 mb-1">
+                              <div
+                                className="bg-primary h-1.5 rounded-full transition-all duration-300"
+                                style={{ width: `${Math.min(model.progress, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-medium text-foreground">
+                              {model.progress}%
                             </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                          </>
+                        )}
+                        {(!model.progress && model.progress !== 0) && (
+                          <span className="text-xs text-muted-foreground">
+                            {model.status === "queued" ? "대기 중..." : "생성 중..."}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <div className="p-3 space-y-2">
                     <p className="text-xs text-muted-foreground line-clamp-2">
-                        {model.prompt || "생성 중..."}
-                      </p>
+                      {model.prompt || "생성 중..."}
+                    </p>
                     <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
+                      <Button
+                        size="sm"
+                        variant="outline"
                         className="flex-1 h-7 text-xs"
-                          onClick={() => handleDownload(model)}
-                          disabled={!model.modelUrl || model.isLoading}
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          다운로드
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
+                        onClick={() => handleDownload(model)}
+                        disabled={!model.modelUrl || model.isLoading}
+                      >
+                        <Download className="h-3 w-3 mr-1" />
+                        다운로드
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         className="flex-1 h-7 text-xs"
-                          onClick={() => handleAddToScene(model)}
-                          disabled={!model.modelUrl || model.isLoading}
-                        >
-                          <Plus className="h-3 w-3 mr-1" />
-                          씬 추가
-                        </Button>
-                      </div>
+                        onClick={() => handleAddToScene(model)}
+                        disabled={!model.modelUrl || model.isLoading}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        씬 추가
+                      </Button>
                     </div>
-                  </Card>
-                ))}
-              </div>
-            ) : (
+                  </div>
+                </Card>
+              ))}
+            </div>
+          ) : (
             <div className="text-center py-8 text-muted-foreground text-sm">
               <ImageIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
               <p>생성된 모델이 없습니다</p>
@@ -1616,9 +1785,8 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
       {/* 가운데: 3D 편집 뷰포트 */}
       <div
-        className={`flex-1 bg-white relative overflow-hidden transition-all duration-200 ${
-          isDraggingOver ? "ring-2 ring-primary ring-offset-2" : ""
-        }`}
+        className={`flex-1 bg-white relative overflow-hidden transition-all duration-200 ${isDraggingOver ? "ring-2 ring-primary ring-offset-2" : ""
+          }`}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -1650,11 +1818,11 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                       <stop offset="100%" style={{ stopColor: '#aaaaaa', stopOpacity: 1 }} />
                     </linearGradient>
                   </defs>
-                  <polygon points="50,20 80,35 80,65 50,80 20,65 20,35" fill="none" stroke="url(#cubeGradient)" strokeWidth="2"/>
-                  <line x1="50" y1="20" x2="50" y2="50" stroke="url(#cubeGradient)" strokeWidth="2"/>
-                  <line x1="20" y1="35" x2="50" y2="50" stroke="url(#cubeGradient)" strokeWidth="2"/>
-                  <line x1="80" y1="35" x2="50" y2="50" stroke="url(#cubeGradient)" strokeWidth="2"/>
-                  <circle cx="50" cy="50" r="4" fill="#888888" className="animate-pulse"/>
+                  <polygon points="50,20 80,35 80,65 50,80 20,65 20,35" fill="none" stroke="url(#cubeGradient)" strokeWidth="2" />
+                  <line x1="50" y1="20" x2="50" y2="50" stroke="url(#cubeGradient)" strokeWidth="2" />
+                  <line x1="20" y1="35" x2="50" y2="50" stroke="url(#cubeGradient)" strokeWidth="2" />
+                  <line x1="80" y1="35" x2="50" y2="50" stroke="url(#cubeGradient)" strokeWidth="2" />
+                  <circle cx="50" cy="50" r="4" fill="#888888" className="animate-pulse" />
                 </svg>
               </div>
               <p className="text-gray-500 text-sm">3D 편집 뷰포트</p>
@@ -1696,74 +1864,141 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 </Button>
               </div>
             )}
+            {/* 백그라운드 업로드 상태 알림 (진행 중인 것만 표시) - Canvas 왼쪽 아래 큐 */}
+            <div className="absolute bottom-6 left-6 z-40 flex flex-col-reverse gap-3 max-w-[320px] pointer-events-none">
+              {pendingUploads.map(upload => (
+                <div
+                  key={upload.id}
+                  className={`pointer-events-auto p-3 border rounded-xl shadow-2xl transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 
+                    ${upload.status === 'error' ? 'bg-red-50/95 border-red-200' :
+                      upload.status === 'completed' ? 'bg-green-50/95 border-green-200' :
+                        'bg-white/95 backdrop-blur-md border-primary/20'}`}
+                >
+                  <div className="flex gap-3 items-center">
+                    <div className="w-10 h-10 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border shadow-inner">
+                      {upload.previewUrl ? (
+                        <img src={upload.previewUrl} className="w-full h-full object-cover" alt="" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-xs">📦</div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <p className="text-[11px] font-black truncate pr-2 text-slate-900 tracking-tight">
+                          {upload.name}
+                        </p>
+                        <span className={`text-[10px] font-black tabular-nums ${upload.status === 'error' ? 'text-red-500' :
+                            upload.status === 'completed' ? 'text-green-600' : 'text-primary'
+                          }`}>
+                          {upload.status === 'error' ? 'ERR' : `${upload.progress}%`}
+                        </span>
+                      </div>
+
+                      {upload.status !== 'error' ? (
+                        <Progress
+                          value={upload.progress}
+                          className={`h-1.5 ${upload.status === 'processing' ? 'animate-pulse' : ''}`}
+                        />
+                      ) : (
+                        <div className="h-1.5 bg-red-200 rounded-full w-full" />
+                      )}
+
+                      <div className="flex items-center gap-1.5 mt-2">
+                        {upload.status === 'uploading' && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                        {upload.status === 'processing' && <Loader2 className="h-3 w-3 animate-spin text-amber-500" />}
+                        {upload.status === 'completed' && <CheckCircle2 className="h-3 w-3 text-green-500" />}
+                        {upload.status === 'error' && <XCircle className="h-3 w-3 text-red-500" />}
+
+                        <p className={`text-[10px] font-bold tracking-tight uppercase ${upload.status === 'error' ? 'text-red-500' :
+                            upload.status === 'completed' ? 'text-green-600' : 'text-slate-600'
+                          }`}>
+                          {upload.status === 'uploading' ? 'Syncing...' :
+                            upload.status === 'processing' ? 'Processing...' :
+                              upload.status === 'error' ? 'Failed' : 'Success'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {upload.status === 'error' && (
+                      <button
+                        onClick={() => setPendingUploads(prev => prev.filter(u => u.id !== upload.id))}
+                        className="p-1 hover:bg-red-100 rounded-full text-red-500 ml-1"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
       {/* 오른쪽 패널: 씬 관리 및 에셋 조합 */}
       <div className="w-80 border-l bg-sidebar flex flex-col">
-          {/* 디오라마 헤더 */}
+        {/* 디오라마 헤더 */}
         <div className="p-4 border-b">
           <div className="flex items-center gap-2 mb-3">
-              <Input
-                value={dioramaName}
-                onChange={(e) => setDioramaName(e.target.value)}
+            <Input
+              value={dioramaName}
+              onChange={(e) => setDioramaName(e.target.value)}
               className="h-8 text-sm font-semibold"
-                placeholder="디오라마 이름"
-              />
-            </div>
+              placeholder="디오라마 이름"
+            />
+          </div>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" className="flex-1" onClick={handleSaveDiorama}>
               <Save className="h-3 w-3 mr-1" />
-                저장
-              </Button>
+              저장
+            </Button>
             <Button size="sm" variant="outline" className="flex-1" onClick={handleExportDiorama}>
               <FileDown className="h-3 w-3 mr-1" />
-                내보내기
-              </Button>
-              <label className="flex-1">
-                <input
-                  type="file"
-                  accept=".json"
-                  className="hidden"
-                  onChange={handleImportDiorama}
-                />
+              내보내기
+            </Button>
+            <label className="flex-1">
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={handleImportDiorama}
+              />
               <Button size="sm" variant="outline" className="w-full" asChild>
-                  <span>
+                <span>
                   <Upload className="h-3 w-3 mr-1" />
-                    불러오기
-                  </span>
-                </Button>
-              </label>
+                  불러오기
+                </span>
+              </Button>
+            </label>
           </div>
-            </div>
+        </div>
 
-            {/* 씬 모델 목록 */}
+        {/* 씬 모델 목록 */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-4 border-b">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold">배경 파츠 ({sceneModels.length})</h3>
-                <div className="flex gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
                   className="h-6 w-6 p-0"
-                    onClick={handleCreateGroup}
-                    disabled={selectedModelIds.length < 2}
-                    title="그룹 만들기"
-                  >
+                  onClick={handleCreateGroup}
+                  disabled={selectedModelIds.length < 2}
+                  title="그룹 만들기"
+                >
                   <FolderPlus className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
                   className="h-6 w-6 p-0"
-                    onClick={handleDeleteSelectedModels}
-                    disabled={selectedModelIds.length === 0}
-                    title="선택 삭제"
-                  >
+                  onClick={handleDeleteSelectedModels}
+                  disabled={selectedModelIds.length === 0}
+                  title="선택 삭제"
+                >
                   <Trash2 className="h-3 w-3" />
-                  </Button>
+                </Button>
               </div>
             </div>
 
@@ -1851,10 +2086,10 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 ))}
               </div>
             )}
-            </div>
+          </div>
 
-            {/* 선택된 모델 변환 컨트롤 */}
-            {selectedModel && (
+          {/* 선택된 모델 변환 컨트롤 */}
+          {selectedModel && (
             <div className="p-4 border-b">
               <h3 className="text-sm font-semibold mb-3">변환 (Transform)</h3>
 
@@ -1873,35 +2108,35 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                   <Camera className={`h-4 w-4 mr-2 ${webcamEnabled ? 'text-white' : ''}`} />
                   {webcamEnabled ? '모션 제어 ON' : '모션 제어 OFF'}
                 </Button>
-                
+
                 <div className="flex gap-1">
-                <Button
-                  size="sm"
-                  variant={transformMode === "position" ? "default" : "outline"}
+                  <Button
+                    size="sm"
+                    variant={transformMode === "position" ? "default" : "outline"}
                     className="flex-1 h-7"
-                  onClick={() => setTransformMode("position")}
-                >
+                    onClick={() => setTransformMode("position")}
+                  >
                     <Move className="h-3 w-3 mr-1" />
-                  위치
-                </Button>
-                <Button
-                  size="sm"
-                  variant={transformMode === "rotation" ? "default" : "outline"}
+                    위치
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={transformMode === "rotation" ? "default" : "outline"}
                     className="flex-1 h-7"
-                  onClick={() => setTransformMode("rotation")}
-                >
+                    onClick={() => setTransformMode("rotation")}
+                  >
                     <RotateCcw className="h-3 w-3 mr-1" />
-                  회전
-                </Button>
-                <Button
-                  size="sm"
-                  variant={transformMode === "scale" ? "default" : "outline"}
+                    회전
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={transformMode === "scale" ? "default" : "outline"}
                     className="flex-1 h-7"
-                  onClick={() => setTransformMode("scale")}
-                >
+                    onClick={() => setTransformMode("scale")}
+                  >
                     <Maximize2 className="h-3 w-3 mr-1" />
-                  크기
-                </Button>
+                    크기
+                  </Button>
                 </div>
               </div>
 
@@ -1978,10 +2213,10 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                   />
                 </div>
               )}
-              </div>
-            )}
+            </div>
+          )}
 
-            {/* 생성된 에셋 (드래그 가능) */}
+          {/* 생성된 에셋 (드래그 가능) */}
           <div className="p-4 border-b">
             <h3 className="text-sm font-semibold mb-3">생성된 에셋</h3>
             {generatedModels.length > 0 ? (
@@ -1989,9 +2224,8 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 {generatedModels.map((model, index) => (
                   <Card
                     key={index}
-                    className={`min-w-[100px] flex-shrink-0 ${
-                      model.modelUrl && !model.isLoading ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"
-                    }`}
+                    className={`min-w-[100px] flex-shrink-0 ${model.modelUrl && !model.isLoading ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"
+                      }`}
                     draggable={!!model.modelUrl && !model.isLoading}
                     onDragStart={(e) => handleDragStart(e, model)}
                   >
@@ -2043,15 +2277,15 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 <p>생성된 모델이 없습니다</p>
               </div>
             )}
-            </div>
+          </div>
 
-            {/* 추천 에셋 */}
+          {/* 추천 에셋 */}
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold">부품 파츠</h3>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="h-6 px-2"
                 onClick={() => setIsSearchDialogOpen(true)}
               >
@@ -2061,14 +2295,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
             <div className="grid grid-cols-2 gap-3">
               {recommendedAssets.map((asset) => {
                 const thumbnailUrl = asset.thumbnailUrl;
-                const imageUrl = thumbnailUrl 
-                  ? thumbnailUrl 
+                const imageUrl = thumbnailUrl
+                  ? thumbnailUrl
                   : `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(asset.name)}`;
-                
+
                 return (
                   <div
-                  key={asset.id}
-                  draggable={true}
+                    key={asset.id}
+                    draggable={true}
                     onDragStart={(e) => handleDragStart(e, {
                       ...asset,
                       modelUrl: asset.glbUrl,
@@ -2088,6 +2322,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                           const offset = sceneModels.length * 0.5;
                           const newModel: SceneModel = {
                             id: `recommended-${asset.id}-${Date.now()}`,
+                            partId: asset.id, // 추천 에셋은 이미 id를 가지고 있음
                             modelUrl: asset.glbUrl,
                             name: asset.name,
                             position: { x: offset, y: 0, z: offset },
@@ -2113,27 +2348,27 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
       {/* 검색 팝업 */}
       <Dialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen}>
-        <DialogContent 
-            className="max-w-[95vw] w-[95vw] max-h-[85vh] overflow-y-auto p-0 border-0 shadow-2xl bg-transparent"
+        <DialogContent
+          className="max-w-[95vw] w-[95vw] max-h-[85vh] overflow-y-auto p-0 border-0 shadow-2xl bg-transparent"
+        >
+          <div
+            className="w-full max-h-[85vh] overflow-y-auto p-6 space-y-6 rounded-2xl border bg-white shadow-lg"
           >
-            <div 
-              className="w-full max-h-[85vh] overflow-y-auto p-6 space-y-6 rounded-2xl border bg-white shadow-lg"
-            >
-              {/* 검색 바 */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
-                <Input
-                  placeholder="Search components, screens, themes..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 h-12 text-base"
-                  autoFocus
-                />
-              </div>
+            {/* 검색 바 */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+              <Input
+                placeholder="Search components, screens, themes..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 h-12 text-base"
+                autoFocus
+              />
+            </div>
 
-              {/* 필터 탭 */}
-              <Tabs defaultValue="components" className="w-full">
-                <TabsList className="w-full justify-start h-auto p-1">
+            {/* 필터 탭 */}
+            <Tabs defaultValue="components" className="w-full">
+              <TabsList className="w-full justify-start h-auto p-1">
                 <TabsTrigger value="components">Components</TabsTrigger>
                 <TabsTrigger value="featured">Featured</TabsTrigger>
                 <TabsTrigger value="newest">Newest</TabsTrigger>
@@ -2170,16 +2405,16 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                       { title: "Features", description: "Feature components" },
                       { title: "Announcements", description: "Announcement components" },
                     ].map((item, index) => (
-                      <Card 
-                        key={index} 
+                      <Card
+                        key={index}
                         className="p-4 transition-all cursor-pointer border bg-gray-50 rounded-xl hover:scale-[1.02] hover:bg-gray-100"
                       >
                         <h4 className="font-semibold mb-2">{item.title}</h4>
                         <p className="text-sm text-muted-foreground">{item.description}</p>
-                </Card>
-              ))}
-            </div>
-          </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
               </TabsContent>
 
               <TabsContent value="featured" className="mt-6">
@@ -2191,16 +2426,16 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                       { title: "Backgrounds", description: "Background lights" },
                       { title: "Features", description: "Feature components" },
                     ].map((item, index) => (
-                      <Card 
-                        key={index} 
+                      <Card
+                        key={index}
                         className="p-4 transition-all cursor-pointer border bg-gray-50 rounded-xl hover:scale-[1.02] hover:bg-gray-100"
                       >
                         <h4 className="font-semibold mb-2">{item.title}</h4>
                         <p className="text-sm text-muted-foreground">{item.description}</p>
                       </Card>
                     ))}
-        </div>
-      </div>
+                  </div>
+                </div>
               </TabsContent>
 
               <TabsContent value="newest" className="mt-6">
@@ -2218,13 +2453,142 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               </TabsContent>
             </Tabs>
 
-              {/* 하단 링크 */}
-              <div className="flex gap-4 pt-4 border-t text-sm text-muted-foreground">
-                <a href="#" className="hover:text-foreground transition-colors">Contact support</a>
-                <a href="#" className="hover:text-foreground transition-colors">Share feedback</a>
+            {/* 하단 링크 */}
+            <div className="flex gap-4 pt-4 border-t text-sm text-muted-foreground">
+              <a href="#" className="hover:text-foreground transition-colors">Contact support</a>
+              <a href="#" className="hover:text-foreground transition-colors">Share feedback</a>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 파츠 업로드 다이얼로그 */}
+      <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <div className="space-y-6 py-4 text-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-24 h-24 bg-muted rounded-xl border-2 border-primary/20 overflow-hidden flex items-center justify-center relative shadow-inner">
+                {uploadFileData?.previewUrl ? (
+                  <img src={uploadFileData.previewUrl} className="w-full h-full object-cover" alt="미리보기" />
+                ) : (
+                  <div className="text-3xl">📦</div>
+                )}
+                <div className="absolute bottom-1 right-1 bg-primary text-[8px] text-white px-1 rounded font-bold">3D</div>
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold leading-none">파츠 정보 입력</h3>
+                <p className="text-sm text-muted-foreground">서버에 등록할 파츠의 정보를 입력해주세요.</p>
               </div>
             </div>
-          </DialogContent>
+
+            <div className="grid gap-5 text-left">
+              <div className="grid gap-2">
+                <Label htmlFor="part-name" className="text-xs font-bold uppercase text-muted-foreground">파츠 이름</Label>
+                <Input
+                  id="part-name"
+                  value={uploadFileData?.name || ''}
+                  onChange={(e) => setUploadFileData(prev => prev ? { ...prev, name: e.target.value } : null)}
+                  placeholder="의자, 나무, 등..."
+                  className="h-10 text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="part-type" className="text-xs font-bold uppercase text-muted-foreground">타입</Label>
+                  <Select
+                    value={uploadFileData?.type}
+                    onValueChange={(val: PartType) => setUploadFileData(prev => prev ? { ...prev, type: val } : null)}
+                  >
+                    <SelectTrigger id="part-type" className="h-10 text-sm">
+                      <SelectValue placeholder="타입 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="OBJECT">객체 (Object)</SelectItem>
+                      <SelectItem value="BACKGROUND">배경 (Background)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="part-category" className="text-xs font-bold uppercase text-muted-foreground">카테고리</Label>
+                  <Select
+                    value={uploadFileData?.category}
+                    onValueChange={(val: PartCategory) => setUploadFileData(prev => prev ? { ...prev, category: val } : null)}
+                  >
+                    <SelectTrigger id="part-category" className="h-10 text-sm">
+                      <SelectValue placeholder="카테고리 선택" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[200px]">
+                      <SelectItem value="FURNITURE_HOME">가구</SelectItem>
+                      <SelectItem value="ARCHITECTURE">건축</SelectItem>
+                      <SelectItem value="NATURE_PLANTS">자연/식물</SelectItem>
+                      <SelectItem value="CHARACTERS_CREATURES">캐릭터</SelectItem>
+                      <SelectItem value="CARS_VEHICLES">차량</SelectItem>
+                      <SelectItem value="ELECTRONICS_GADGETS">전자제품</SelectItem>
+                      <SelectItem value="FOOD_DRINK">음식</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1 h-11"
+                disabled={isUploadingPart}
+                onClick={() => {
+                  setIsUploadDialogOpen(false);
+                  setUploadFileData(null);
+                  setUploadProgress(0);
+                }}
+              >
+                취소
+              </Button>
+              <Button
+                className="flex-1 h-11"
+                disabled={isUploadingPart || !uploadFileData?.name}
+                onClick={handleConfirmUpload}
+              >
+                {isUploadingPart ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    저장 중...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" />
+                    등록 완료
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {/* 업로드 프로그레스 바 */}
+            {isUploadingPart && (
+              <div className="pt-2 space-y-2">
+                <div className="flex justify-between text-[10px] font-bold text-muted-foreground uppercase">
+                  <span>
+                    {uploadProgress < 100
+                      ? "Uploading to server"
+                      : "Finalizing & Processing on server..."}
+                  </span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <Progress
+                  value={uploadProgress}
+                  className={`h-1.5 ${uploadProgress === 100 ? "animate-pulse" : ""}`}
+                />
+                {uploadProgress === 100 && (
+                  <p className="text-[9px] text-muted-foreground animate-pulse">
+                    The server is registering your asset. This may take a moment.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </DialogContent>
       </Dialog>
     </div>
   );
@@ -2232,14 +2596,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
 // 모델 리스트 아이템 컴포넌트
 function ModelListItem({
-    model,
-    isSelected,
-    onSelect,
-    onDelete,
-    onDuplicate,
-    onToggleVisibility,
-    onToggleLock,
-    onRename,
+  model,
+  isSelected,
+  onSelect,
+  onDelete,
+  onDuplicate,
+  onToggleVisibility,
+  onToggleLock,
+  onRename,
 }: {
   model: SceneModel;
   isSelected: boolean;
@@ -2262,9 +2626,8 @@ function ModelListItem({
 
   return (
     <div
-      className={`flex items-center gap-1 p-1.5 rounded cursor-pointer transition-colors ${
-        isSelected ? "bg-primary/20 border border-primary/50" : "hover:bg-muted"
-      } ${!model.visible ? "opacity-50" : ""}`}
+      className={`flex items-center gap-1 p-1.5 rounded cursor-pointer transition-colors ${isSelected ? "bg-primary/20 border border-primary/50" : "hover:bg-muted"
+        } ${!model.visible ? "opacity-50" : ""}`}
       onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey)}
     >
       <GripVertical className="h-3 w-3 text-muted-foreground flex-shrink-0 cursor-grab" />

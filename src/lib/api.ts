@@ -1,7 +1,7 @@
 // Backend API Client
 // Base URL from OpenAPI spec
 // 개발 환경에서는 Vite 프록시를 사용하여 CORS 문제 해결
-const API_BASE_URL = import.meta.env.DEV 
+const API_BASE_URL = import.meta.env.DEV
   ? '' // 개발 환경: Vite 프록시 사용 (/api로 시작)
   : (import.meta.env.VITE_API_BASE_URL || 'https://f76640308ac2.ngrok-free.app');
 
@@ -180,10 +180,73 @@ async function apiCall<T>(
   if (contentType && contentType.includes('application/json')) {
     return response.json();
   }
-  
+
   // For non-JSON responses, return as text or null
   const text = await response.text();
-  return (text ? JSON.parse(text) : null) as T;
+  try {
+    return (text ? JSON.parse(text) : null) as T;
+  } catch (e) {
+    return text as unknown as T;
+  }
+}
+
+// Helper function for API calls with progress tracking
+async function apiCallWithProgress<T>(
+  endpoint: string,
+  options: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: any;
+    onProgress?: (progress: number) => void;
+  } = {}
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const url = `${API_BASE_URL}${endpoint}`;
+
+    xhr.open(options.method || 'GET', url);
+
+    // Set headers
+    const token = getAuthToken();
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+    xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');
+
+    if (options.headers) {
+      Object.entries(options.headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+    }
+
+    // Progress tracking
+    if (xhr.upload && options.onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = (event.loaded / event.total) * 100;
+          options.onProgress?.(Math.round(percentComplete));
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        let response;
+        const contentType = xhr.getResponseHeader('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          response = JSON.parse(xhr.responseText);
+        } else {
+          response = xhr.responseText;
+        }
+        resolve(response as T);
+      } else {
+        reject(new Error(`API Error: ${xhr.status} - ${xhr.responseText}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network Error'));
+    xhr.send(options.body);
+  });
 }
 
 // Authentication APIs
@@ -238,7 +301,7 @@ export const projectApi = {
     const queryParams = new URLSearchParams();
     if (params?.sort) queryParams.append('sort', params.sort);
     if (params?.timeRange) queryParams.append('timeRange', params.timeRange);
-    
+
     const queryString = queryParams.toString();
     return apiCall<ProjectResponse[]>(`/api/projects${queryString ? `?${queryString}` : ''}`);
   },
@@ -300,7 +363,8 @@ export const partApi = {
     name: string,
     type: PartType,
     category: PartCategory,
-    modelFile: File
+    modelFile: File,
+    onProgress?: (progress: number) => void
   ): Promise<number> => {
     const formData = new FormData();
     formData.append('modelFile', modelFile);
@@ -310,30 +374,11 @@ export const partApi = {
     queryParams.append('type', type);
     queryParams.append('category', category);
 
-    const token = getAuthToken();
-    const headers: HeadersInit = {
-      'ngrok-skip-browser-warning': 'true',
-    };
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(
-      `${API_BASE_URL}/api/parts?${queryParams.toString()}`,
-      {
-        method: 'POST',
-        headers,
-        body: formData,
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error: ${response.status} - ${errorText}`);
-    }
-
-    return response.json();
+    return apiCallWithProgress<number>(`/api/parts?${queryParams.toString()}`, {
+      method: 'POST',
+      body: formData,
+      onProgress
+    });
   },
 
   likePart: async (partId: number): Promise<void> => {
