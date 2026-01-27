@@ -36,7 +36,7 @@ export interface ProfileCardProps extends React.HTMLAttributes<HTMLDivElement> {
   role?: string
   location?: string
   joinDate?: string
-  bio?: string
+  description?: string
   isLoading?: boolean
   onUpdateProfile?: (data: UserUpdateRequest) => Promise<void>
   stats?: {
@@ -54,7 +54,7 @@ export function ProfileCard({
   role,
   location,
   joinDate,
-  bio,
+  description,
   isLoading = false,
   onUpdateProfile,
   stats = {
@@ -69,7 +69,9 @@ export function ProfileCard({
   const displayJoinDate = joinDate || (isLoading ? "..." : "Recently joined");
   const displayRole = role || "Developer";
   const displayLocation = location || "South Korea";
-  const displayBio = bio || "3D modeling and motion control enthusiast.";
+
+  const bio_fallback = "3D modeling and motion control enthusiast.";
+  const displayBio = description || bio_fallback;
 
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [isUpdating, setIsUpdating] = React.useState(false);
@@ -77,7 +79,7 @@ export function ProfileCard({
     nickname: name || "",
     region: location || "",
     job: role || "",
-    description: bio || "",
+    description: description || "",
   });
 
   // Update form data when props change
@@ -86,15 +88,15 @@ export function ProfileCard({
       nickname: name || "",
       region: location || "",
       job: role || "",
-      description: bio || "",
+      description: description || "",
     });
-  }, [name, location, role, bio]);
+  }, [name, location, role, description]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [id === "bio" ? "description" : id]: value,
+      [id]: value,
     }));
   };
 
@@ -212,11 +214,11 @@ export function ProfileCard({
                         />
                       </div>
                       <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="bio" className="text-right">
+                        <Label htmlFor="description" className="text-right">
                           Bio
                         </Label>
                         <Textarea
-                          id="bio"
+                          id="description"
                           value={formData.description}
                           onChange={handleInputChange}
                           placeholder="Tell us about yourself"

@@ -671,7 +671,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
           joinDate={user?.createdAt ? new Date(user.createdAt).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' }) : undefined}
           role={user?.job}
           location={user?.region}
-          bio={user?.description}
+          description={user?.description}
           isLoading={isLoadingUser}
           onUpdateProfile={handleUpdateProfile}
         />;
