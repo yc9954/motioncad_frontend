@@ -29,9 +29,10 @@ import { PromptingTab } from "@/app/components/prompting-tab"
 import { TravelCard } from "@/app/components/ui/travel-card"
 import { ProfileCard } from "@/app/components/ui/profile-card"
 import { Gallery4, Gallery4Props } from "@/components/blocks/gallery4"
-import { projectApi, ProjectResponse, authApi, userApi, UserResponse, UserUpdateRequest } from "@/lib/api"
+import { projectApi, partApi, ProjectResponse, PartResponse, authApi, userApi, UserResponse, UserUpdateRequest, PartType } from "@/lib/api"
 import { toast } from "sonner"
 import { Button } from "@/app/components/ui/button"
+import { Loader2, Layers } from "lucide-react"
 
 // Menu items
 const menuItems = [
@@ -151,17 +152,18 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
     updatedAt: new Date().toISOString(),
   }));
 
-  const [projects, setProjects] = useState<ProjectResponse[]>(initialMockProjects);
+  const [projects, setProjects] = useState<ProjectResponse[]>([]);
+  const [parts, setParts] = useState<PartResponse[]>([]);
   const [user, setUser] = useState<UserResponse | null>(null);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [isLoadingParts, setIsLoadingParts] = useState(false);
   const [isLoadingUser, setIsLoadingUser] = useState(false);
   const [projectThumbnails, setProjectThumbnails] = useState<Record<number, string>>({});
   const [selectedProject, setSelectedProject] = useState<{ glbUrl: string; name: string } | null>(null);
 
   const onProjectClick = (project: ProjectResponse) => {
-    const mockProject = mockProjects.find(p => p.id === project.id);
     setSelectedProject({
-      glbUrl: project.previewImageUrl || projectThumbnails[project.id] || mockProject?.glbUrl || '',
+      glbUrl: project.previewImageUrl || projectThumbnails[project.id] || '',
       name: project.title
     });
     setActiveTab("prompting");
@@ -202,7 +204,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
     }
   };
 
-  // 백엔드에서 프로젝트 목록 가져오기 (백그라운드에서 시도)
+  // 백엔드에서 프로젝트 목록 가져오기
   useEffect(() => {
     const loadProjects = async () => {
       if (activeTab !== 'home') return;
@@ -211,7 +213,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
       try {
         const fetchedProjects = await projectApi.getProjects({ sort: 'latest' });
         if (fetchedProjects && fetchedProjects.length > 0) {
-          setProjects(fetchedProjects);
+          setProjects(fetchedProjects.slice(0, 12)); // 최대 12개만 표시
 
           // 썸네일 URL 설정
           const thumbnails: Record<number, string> = {};
@@ -223,14 +225,39 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
           setProjectThumbnails(prev => ({ ...prev, ...thumbnails }));
         }
       } catch (error) {
-        console.error('프로젝트 목록 로드 실패 (mock 데이터 사용):', error);
-        // 실패해도 mock 데이터가 이미 표시되고 있으므로 에러만 로그
+        console.error('프로젝트 목록 로드 실패:', error);
+        toast.error('프로젝트 목록을 불러오는데 실패했습니다.');
       } finally {
         setIsLoadingProjects(false);
       }
     };
 
     loadProjects();
+  }, [activeTab]);
+
+  // 백엔드에서 파츠 목록 가져오기
+  useEffect(() => {
+    const loadParts = async () => {
+      if (activeTab !== 'home') return;
+
+      setIsLoadingParts(true);
+      try {
+        // OBJECT 타입 파츠 가져오기
+        const objectParts = await partApi.getParts({ 
+          type: 'OBJECT', 
+          sort: 'latest',
+          count: 12 
+        });
+        setParts(objectParts);
+      } catch (error) {
+        console.error('파츠 목록 로드 실패:', error);
+        toast.error('파츠 목록을 불러오는데 실패했습니다.');
+      } finally {
+        setIsLoadingParts(false);
+      }
+    };
+
+    loadParts();
   }, [activeTab]);
 
   // GLB 썸네일 생성 함수 (prompting-tab의 함수와 유사한 로직)
@@ -559,57 +586,99 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
   const renderContent = () => {
     switch (activeTab) {
       case "home":
+        // 실제 프로젝트 데이터를 Gallery4 형식으로 변환
+        const galleryItems = projects.slice(0, 12).map((project) => ({
+          id: `project-${project.id}`,
+          title: project.title,
+          description: project.description || `This project has ${project.viewsCount} views and ${project.likesCount} likes. Created by ${project.nickname || 'Unknown'}.`,
+          href: `#project-${project.id}`,
+          image: project.previewImageUrl || projectThumbnails[project.id] || 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
+        }));
+
+        // 프로젝트가 부족하면 mock 데이터로 채우기
+        const mockItems = [
+          {
+            id: "shadcn-ui",
+            title: "shadcn/ui: Building a Modern Component Library",
+            description:
+              "Explore how shadcn/ui revolutionized React component libraries by providing a unique approach to component distribution and customization, making it easier for developers to build beautiful, accessible applications.",
+            href: "https://ui.shadcn.com",
+            image:
+              "https://images.unsplash.com/photo-1551250928-243dc937c49d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxMjN8fHx8fHwyfHwxNzIzODA2OTM5fA&ixlib=rb-4.0.3&q=80&w=1080",
+          },
+          {
+            id: "tailwind",
+            title: "Tailwind CSS: The Utility-First Revolution",
+            description:
+              "Discover how Tailwind CSS transformed the way developers style their applications, offering a utility-first approach that speeds up development while maintaining complete design flexibility.",
+            href: "https://tailwindcss.com",
+            image:
+              "https://images.unsplash.com/photo-1551250928-e4a05afaed1e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxMjR8fHx8fHwyfHwxNzIzODA2OTM5fA&ixlib=rb-4.0.3&q=80&w=1080",
+          },
+          {
+            id: "astro",
+            title: "Astro: The All-in-One Web Framework",
+            description:
+              "Learn how Astro's innovative 'Islands Architecture' and zero-JS-by-default approach is helping developers build faster websites while maintaining rich interactivity where needed.",
+            href: "https://astro.build",
+            image:
+              "https://images.unsplash.com/photo-1536735561749-fc87494598cb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxNzd8fHx8fHwyfHwxNzIzNjM0NDc0fA&ixlib=rb-4.0.3&q=80&w=1080",
+          },
+          {
+            id: "react",
+            title: "React: Pioneering Component-Based UI",
+            description:
+              "See how React continues to shape modern web development with its component-based architecture, enabling developers to build complex user interfaces with reusable, maintainable code.",
+            href: "https://react.dev",
+            image:
+              "https://images.unsplash.com/photo-1548324215-9133768e4094?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxMzF8fHx8fHwyfHwxNzIzNDM1MzA1fA&ixlib=rb-4.0.3&q=80&w=1080",
+          },
+          {
+            id: "nextjs",
+            title: "Next.js: The React Framework for Production",
+            description:
+              "Explore how Next.js has become the go-to framework for building full-stack React applications, offering features like server components, file-based routing, and automatic optimization.",
+            href: "https://nextjs.org",
+            image:
+              "https://images.unsplash.com/photo-1550070881-a5d71eda5800?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxMjV8fHx8fHwyfHwxNzIzNDM1Mjk4fA&ixlib=rb-4.0.3&q=80&w=1080",
+          },
+          {
+            id: "vue",
+            title: "Vue.js: The Progressive JavaScript Framework",
+            description:
+              "Discover how Vue.js provides an approachable, versatile, and performant framework for building user interfaces with its progressive adoption model and intuitive API.",
+            href: "https://vuejs.org",
+            image:
+              "https://images.unsplash.com/photo-1551650975-87deedd944c3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+          },
+          {
+            id: "svelte",
+            title: "Svelte: Cybernetically Enhanced Web Apps",
+            description:
+              "Learn how Svelte shifts work from the browser to the build step, creating highly optimized vanilla JavaScript that results in faster runtime performance.",
+            href: "https://svelte.dev",
+            image:
+              "https://images.unsplash.com/photo-1551650975-87deedd944c3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+          },
+          {
+            id: "angular",
+            title: "Angular: Platform for Building Mobile and Desktop Apps",
+            description:
+              "Explore how Angular provides a comprehensive framework for building large-scale applications with TypeScript, dependency injection, and a powerful CLI.",
+            href: "https://angular.io",
+            image:
+              "https://images.unsplash.com/photo-1551650975-87deedd944c3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+          },
+        ];
+
+        // 실제 프로젝트를 우선하고, 부족하면 mock 데이터로 채우기
+        const allGalleryItems = [...galleryItems, ...mockItems.slice(0, Math.max(0, 12 - galleryItems.length))];
+
         const galleryData: Gallery4Props = {
           title: "Projects",
           description:
             "Discover how leading companies and developers are leveraging modern web technologies to build exceptional digital experiences. These case studies showcase real-world applications and success stories.",
-          items: [
-            {
-              id: "shadcn-ui",
-              title: "shadcn/ui: Building a Modern Component Library",
-              description:
-                "Explore how shadcn/ui revolutionized React component libraries by providing a unique approach to component distribution and customization, making it easier for developers to build beautiful, accessible applications.",
-              href: "https://ui.shadcn.com",
-              image:
-                "https://images.unsplash.com/photo-1551250928-243dc937c49d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxMjN8fHx8fHwyfHwxNzIzODA2OTM5fA&ixlib=rb-4.0.3&q=80&w=1080",
-            },
-            {
-              id: "tailwind",
-              title: "Tailwind CSS: The Utility-First Revolution",
-              description:
-                "Discover how Tailwind CSS transformed the way developers style their applications, offering a utility-first approach that speeds up development while maintaining complete design flexibility.",
-              href: "https://tailwindcss.com",
-              image:
-                "https://images.unsplash.com/photo-1551250928-e4a05afaed1e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxMjR8fHx8fHwyfHwxNzIzODA2OTM5fA&ixlib=rb-4.0.3&q=80&w=1080",
-            },
-            {
-              id: "astro",
-              title: "Astro: The All-in-One Web Framework",
-              description:
-                "Learn how Astro's innovative 'Islands Architecture' and zero-JS-by-default approach is helping developers build faster websites while maintaining rich interactivity where needed.",
-              href: "https://astro.build",
-              image:
-                "https://images.unsplash.com/photo-1536735561749-fc87494598cb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxNzd8fHx8fHwyfHwxNzIzNjM0NDc0fA&ixlib=rb-4.0.3&q=80&w=1080",
-            },
-            {
-              id: "react",
-              title: "React: Pioneering Component-Based UI",
-              description:
-                "See how React continues to shape modern web development with its component-based architecture, enabling developers to build complex user interfaces with reusable, maintainable code.",
-              href: "https://react.dev",
-              image:
-                "https://images.unsplash.com/photo-1548324215-9133768e4094?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxMzF8fHx8fHwyfHwxNzIzNDM1MzA1fA&ixlib=rb-4.0.3&q=80&w=1080",
-            },
-            {
-              id: "nextjs",
-              title: "Next.js: The React Framework for Production",
-              description:
-                "Explore how Next.js has become the go-to framework for building full-stack React applications, offering features like server components, file-based routing, and automatic optimization.",
-              href: "https://nextjs.org",
-              image:
-                "https://images.unsplash.com/photo-1550070881-a5d71eda5800?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxMjV8fHx8fHwyfHwxNzIzNDM1Mjk4fA&ixlib=rb-4.0.3&q=80&w=1080",
-            },
-          ],
+          items: allGalleryItems,
         };
 
         return (
@@ -617,39 +686,49 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
             {/* Gallery Section */}
             <Gallery4 {...galleryData} />
 
-            {/* Projects Section */}
+            {/* Parts Section */}
             <div className="p-6">
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-2xl font-bold">Recent Projects</h2>
-                  <button className="text-sm text-muted-foreground hover:text-foreground">
-                    View all →
-                  </button>
+                <div className="mb-4 flex items-end justify-between">
+                  <div className="flex flex-col gap-2">
+                    <h2 className="text-2xl font-bold">Parts</h2>
+                    <p className="text-sm text-muted-foreground max-w-lg">
+                      Discover a collection of 3D models and assets created by our community. Browse through various categories and find the perfect parts for your projects. Click on any part to learn more or use it in the 3D editor.
+                    </p>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {projects.map((project) => {
-                    // 썸네일 URL: previewImageUrl 우선, 없으면 projectThumbnails (GLB에서 생성된 썸네일)
-                    // GLB 썸네일이 아직 생성 중이면 mockProjects의 thumbnailUrl을 임시로 사용
-                    const thumbnailUrl = project.previewImageUrl || projectThumbnails[project.id];
-                    const mockProject = mockProjects.find(p => p.id === project.id);
+                {isLoadingParts ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                  </div>
+                ) : parts.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Layers className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-lg font-semibold">파츠가 없습니다</p>
+                    <p className="text-sm mt-2">새로운 파츠를 업로드해보세요</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {parts.map((part) => {
+                      const imageUrl = part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
 
-                    // GLB 썸네일이 없고 생성 중일 때만 fallback 사용
-                    const imageUrl = thumbnailUrl || mockProject?.thumbnailUrl || '';
-
-                    return (
-                      <TravelCard
-                        key={project.id}
-                        imageUrl={imageUrl}
-                        imageAlt={project.title}
-                        title={project.title}
-                        location={`by ${project.nickname || 'Unknown'}`}
-                        overview={project.description || `This project has ${project.viewsCount} views and ${project.likesCount} likes. Click to open and edit in the 3D editor.`}
-                        onBookNow={() => onProjectClick(project)}
-                        className="h-[350px]"
-                      />
-                    );
-                  })}
-                </div>
+                      return (
+                        <TravelCard
+                          key={part.id}
+                          imageUrl={imageUrl}
+                          imageAlt={part.name}
+                          title={part.name}
+                          location={part.category || '3D Model'}
+                          overview={part.description || `A 3D ${part.name} model. ${part.likesCount} likes, ${part.viewsCount} views.`}
+                          onBookNow={() => {
+                            toast.info(`${part.name} 파츠를 사용하려면 Prompting 탭에서 드래그하세요.`);
+                          }}
+                          className="h-[350px]"
+                        />
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>

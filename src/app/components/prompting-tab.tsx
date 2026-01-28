@@ -9,7 +9,7 @@ import {
   Loader2, Sparkles, XCircle, Download, Plus, Image as ImageIcon,
   Grid3x3, Upload, X, Trash2, Copy, Eye, EyeOff, Lock, Unlock,
   Move, RotateCcw, Maximize2, Layers, FolderPlus, Save, FileDown,
-  ChevronDown, ChevronRight, GripVertical, Camera, Search, CheckCircle2
+  ChevronDown, ChevronRight, ChevronLeft, GripVertical, Camera, Search, CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
 import { generate3DModel, checkTaskStatus } from "@/lib/tripo-api";
@@ -18,7 +18,7 @@ import { Unified3DScene } from "@/app/components/unified-3d-scene";
 import { TravelCard } from "@/app/components/ui/travel-card";
 import { Dialog, DialogContent, DialogOverlay } from "@/app/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/app/components/ui/tabs";
-import { projectApi, assetApi, partApi, ComponentRequest, ProjectRequest, PartType, PartCategory, PartResponse } from "@/lib/api";
+import { projectApi, assetApi, partApi, userApi, ComponentRequest, ProjectRequest, PartType, PartCategory, PartResponse, ProjectResponse, UserResponse } from "@/lib/api";
 import { generateThumbnailFromGLB } from "@/lib/thumbnail-generator";
 import {
   Select,
@@ -36,6 +36,7 @@ import { GlassCard } from "@/app/components/ui/glass-card";
 interface SceneModel {
   id: string;
   partId?: number; // 백엔드에서의 실제 파츠 ID
+  partType?: 'OBJECT' | 'BACKGROUND'; // 파츠 타입
   modelUrl?: string;
   name: string;
   position: { x: number; y: number; z: number };
@@ -126,9 +127,16 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [searchQuery, setSearchQuery] = useState("");
   const [libraryParts, setLibraryParts] = useState<PartResponse[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+  const [isLoadProjectDialogOpen, setIsLoadProjectDialogOpen] = useState(false);
+  const [myProjects, setMyProjects] = useState<ProjectResponse[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [sortBy, setSortBy] = useState<'latest' | 'name'>('latest');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 9; // 한 행에 3개씩 3행 (총 9개)
+  
+  // 파츠 추천 섹션용 상태
+  const [partsSectionPage, setPartsSectionPage] = useState(1);
+  const partsPerPage = 6; // 파츠 추천 섹션은 6개씩
 
   // 라이브러리 파츠 가져오기
   const fetchLibraryParts = useCallback(async () => {
@@ -140,8 +148,12 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       // URL 정규화: ngrok 또는 S3 전체 URL인 경우 상대 경로(프록시)로 변경
       const normalizedParts = parts.map(part => {
         let modelFileUrl = part.modelFileUrl;
-        if (!modelFileUrl) return part;
+        let thumbnailUrl = part.thumbnailUrl;
 
+        console.log(`[Parts] 부품 로드: ${part.name}, 썸네일: ${thumbnailUrl ? '있음' : '없음'}, 모델: ${modelFileUrl ? '있음' : '없음'}`);
+
+        // modelFileUrl 정규화
+        if (modelFileUrl) {
         // 1. ngrok URL 처리
         if (modelFileUrl.includes('ngrok-free.app')) {
           try {
@@ -155,9 +167,28 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
             const url = new URL(modelFileUrl);
             modelFileUrl = `/s3-proxy${url.pathname}${url.search}`;
           } catch (e) { /* ignore */ }
+          }
         }
 
-        return { ...part, modelFileUrl };
+        // thumbnailUrl 정규화
+        if (thumbnailUrl) {
+          // 1. ngrok URL 처리
+          if (thumbnailUrl.includes('ngrok-free.app')) {
+            try {
+              const url = new URL(thumbnailUrl);
+              thumbnailUrl = url.pathname + url.search;
+            } catch (e) { /* ignore */ }
+          }
+          // 2. S3 URL 처리 (프록시 /s3-proxy 사용)
+          else if (thumbnailUrl.includes('madcampw3withyc1.s3.ap-northeast-2.amazonaws.com')) {
+            try {
+              const url = new URL(thumbnailUrl);
+              thumbnailUrl = `/s3-proxy${url.pathname}${url.search}`;
+            } catch (e) { /* ignore */ }
+          }
+        }
+
+        return { ...part, modelFileUrl, thumbnailUrl };
       });
 
       setLibraryParts(normalizedParts);
@@ -175,6 +206,103 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       fetchLibraryParts();
     }
   }, [isSearchDialogOpen, fetchLibraryParts]);
+
+  // 컴포넌트 마운트 시 부품 데이터 로드 (파츠 추천 섹션용)
+  useEffect(() => {
+    if (libraryParts.length === 0) {
+      fetchLibraryParts();
+    }
+  }, []); // 초기 마운트 시 한 번만 실행
+
+  // 파츠 추천 섹션 방향키 네비게이션
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 파츠 추천 섹션이 포커스되어 있을 때만 작동
+      const totalPages = Math.ceil(libraryParts.length / partsPerPage);
+      if (totalPages <= 1) return;
+
+      if (e.key === 'ArrowLeft' && partsSectionPage > 1) {
+        e.preventDefault();
+        setPartsSectionPage(prev => prev - 1);
+      } else if (e.key === 'ArrowRight' && partsSectionPage < totalPages) {
+        e.preventDefault();
+        setPartsSectionPage(prev => prev + 1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [libraryParts.length, partsSectionPage]);
+
+  // 썸네일이 없는 부품에 대해 GLB에서 썸네일 생성
+  useEffect(() => {
+    const generateMissingThumbnails = async () => {
+      const partsWithoutThumbnails = libraryParts.filter(
+        part => !part.thumbnailUrl && part.modelFileUrl
+      );
+
+      if (partsWithoutThumbnails.length === 0) {
+        console.log('[Thumbnail] 모든 부품에 썸네일이 있습니다.');
+        return;
+      }
+
+      console.log(`[Thumbnail] 썸네일이 없는 부품 ${partsWithoutThumbnails.length}개 발견`);
+
+      // 한 번에 너무 많이 생성하지 않도록 제한 (처음 6개만)
+      const partsToProcess = partsWithoutThumbnails.slice(0, 6);
+
+      const updatedParts = await Promise.all(
+        partsToProcess.map(async (part) => {
+          try {
+            // modelFileUrl이 상대 경로인 경우 API_BASE_URL 추가
+            let glbUrl = part.modelFileUrl;
+            if (glbUrl && !glbUrl.startsWith('http')) {
+              const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://0590d2abeade.ngrok-free.app';
+              glbUrl = `${apiBaseUrl}${glbUrl.startsWith('/') ? '' : '/'}${glbUrl}`;
+            }
+
+            console.log(`[Thumbnail] ${part.name}의 썸네일 생성 시도: ${glbUrl}`);
+
+            if (glbUrl) {
+              const thumbnail = await generateThumbnailFromGLBUrl(glbUrl);
+              if (thumbnail) {
+                console.log(`[Thumbnail] ${part.name}의 썸네일 생성 성공: ${thumbnail}`);
+                return { ...part, thumbnailUrl: thumbnail };
+              } else {
+                console.warn(`[Thumbnail] ${part.name}의 썸네일 생성 실패 (null 반환)`);
+              }
+            } else {
+              console.warn(`[Thumbnail] ${part.name}의 GLB URL이 없습니다.`);
+            }
+          } catch (error) {
+            console.error(`[Thumbnail] ${part.name}의 썸네일 생성 중 오류:`, error);
+          }
+          return part;
+        })
+      );
+
+      // 업데이트된 부품으로 목록 갱신
+      const hasUpdates = updatedParts.some((updated, index) => 
+        updated.thumbnailUrl !== partsToProcess[index].thumbnailUrl
+      );
+
+      if (hasUpdates) {
+        console.log('[Thumbnail] 썸네일 업데이트 적용 중...');
+        setLibraryParts(prev => prev.map(part => {
+          const updated = updatedParts.find(p => p.id === part.id);
+          return updated || part;
+        }));
+      }
+    };
+
+    if (libraryParts.length > 0) {
+      // 약간의 지연을 두어 초기 렌더링 후 실행
+      const timer = setTimeout(() => {
+        generateMissingThumbnails();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [libraryParts.length]); // libraryParts가 변경될 때마다 체크
 
   // 필터링, 정렬, 페이지네이션 로직
   const filteredAndSortedParts = React.useMemo(() => {
@@ -286,23 +414,49 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   // GLB URL에서 직접 썸네일 생성하는 함수
   const generateThumbnailFromGLBUrl = async (glbUrl: string): Promise<string | null> => {
     try {
+      console.log(`[Thumbnail] GLB 파일 다운로드 시작: ${glbUrl}`);
+      
       // GLB 파일을 fetch하여 File 객체로 변환
-      const response = await fetch(glbUrl);
+      const response = await fetch(glbUrl, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+        },
+      });
+      
       if (!response.ok) {
-        console.warn(`Failed to fetch GLB from ${glbUrl}:`, response.statusText);
+        console.warn(`[Thumbnail] GLB 다운로드 실패 (${response.status}): ${response.statusText}`);
         return null;
       }
+      
       const blob = await response.blob();
+      console.log(`[Thumbnail] GLB 파일 다운로드 완료 (${blob.size} bytes)`);
+      
+      if (blob.size === 0) {
+        console.warn(`[Thumbnail] GLB 파일이 비어있습니다.`);
+        return null;
+      }
+      
       const file = new File([blob], 'model.glb', { type: 'model/gltf-binary' });
 
       // 썸네일 생성
+      console.log(`[Thumbnail] 썸네일 생성 시작...`);
       const thumbnailFile = await generateThumbnailFromGLB(file);
-      if (!thumbnailFile) return null;
+      
+      if (!thumbnailFile) {
+        console.warn(`[Thumbnail] 썸네일 생성 실패 (null 반환)`);
+        return null;
+      }
 
       // File 객체를 URL로 변환하여 반환
-      return URL.createObjectURL(thumbnailFile);
+      const thumbnailUrl = URL.createObjectURL(thumbnailFile);
+      console.log(`[Thumbnail] 썸네일 생성 완료: ${thumbnailUrl}`);
+      return thumbnailUrl;
     } catch (error) {
-      console.error(`Error generating thumbnail from URL ${glbUrl}:`, error);
+      console.error(`[Thumbnail] 썸네일 생성 중 오류 발생:`, error);
+      if (error instanceof Error) {
+        console.error(`[Thumbnail] 오류 메시지: ${error.message}`);
+        console.error(`[Thumbnail] 스택: ${error.stack}`);
+      }
       return null;
     }
   };
@@ -806,17 +960,39 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   // 디오라마 저장 (백엔드 API 연결)
   const handleSaveDiorama = useCallback(async () => {
     try {
-      // 사용자 ID 가져오기 (임시로 localStorage에서, 나중에 인증 시스템으로 교체)
-      const userId = parseInt(localStorage.getItem('userId') || '1', 10);
-      const currentProjectId = localStorage.getItem('currentProjectId')
-        ? parseInt(localStorage.getItem('currentProjectId')!, 10)
-        : undefined;
+      // 현재 사용자 정보 가져오기
+      const user = await userApi.getMe();
+      const userId = user.id;
+      
+      console.log('[Save Project] Current user:', user);
+      console.log('[Save Project] Using userId:', userId);
+      
+      if (!userId || userId === 0) {
+        throw new Error('사용자 ID를 가져올 수 없습니다. 로그인 상태를 확인해주세요.');
+      }
+      
+      // currentProjectId가 있으면 해당 프로젝트가 존재하는지 확인
+      let currentProjectId: number | undefined = undefined;
+      const storedProjectId = localStorage.getItem('currentProjectId');
+      if (storedProjectId) {
+        const projectId = parseInt(storedProjectId, 10);
+        try {
+          // 프로젝트가 존재하는지 확인
+          await projectApi.getProject(projectId);
+          currentProjectId = projectId;
+          console.log('[Save Project] Using existing projectId:', currentProjectId);
+        } catch (error) {
+          // 프로젝트가 존재하지 않으면 localStorage에서 제거
+          console.warn('[Save Project] Project not found, removing from localStorage:', projectId);
+          localStorage.removeItem('currentProjectId');
+        }
+      }
 
-      // 씬 모델을 컴포넌트 요청 형식으로 변환
+      // 씬 모델을 컴포넌트 요청 형식으로 변환 (partId가 있는 모델만)
       const components: ComponentRequest[] = sceneModels
-        .filter(m => m.modelUrl && m.visible)
+        .filter(m => m.modelUrl && m.visible && m.partId && m.partId > 0) // partId가 있어야 함
         .map(m => ({
-          partId: m.partId || 0, // 백엔드에서 생성된 실제 partId 사용
+          partId: m.partId!, // partId가 있는 것만 필터링했으므로 non-null assertion 사용
           posX: m.position.x,
           posY: m.position.y,
           posZ: m.position.z,
@@ -827,6 +1003,9 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           scaleY: m.scale,
           scaleZ: m.scale,
         }));
+      
+      console.log('[Save Project] Components to save:', components);
+      console.log('[Save Project] Components count:', components.length);
 
       // 프로젝트 요청 생성
       const projectRequest: ProjectRequest = {
@@ -837,7 +1016,24 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       };
 
       // 백엔드에 저장
-      const projectId = await projectApi.saveProject(userId, projectRequest, currentProjectId);
+      let projectId: number;
+      try {
+        projectId = await projectApi.saveProject(userId, projectRequest, currentProjectId);
+      } catch (error) {
+        // 프로젝트를 찾을 수 없는 경우 (404 또는 500 에러), 새 프로젝트로 생성
+        if (error instanceof Error && (
+          error.message.includes('Project not found') || 
+          error.message.includes('500') ||
+          error.message.includes('404')
+        )) {
+          console.warn('기존 프로젝트를 찾을 수 없습니다. 새 프로젝트로 생성합니다.');
+          // currentProjectId를 제거하고 새 프로젝트로 생성
+          localStorage.removeItem('currentProjectId');
+          projectId = await projectApi.saveProject(userId, projectRequest, undefined);
+        } else {
+          throw error;
+        }
+      }
 
       // 프로젝트 ID 저장
       localStorage.setItem('currentProjectId', projectId.toString());
@@ -964,7 +1160,107 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     }
   }, [dioramaName, sceneModels]);
 
-  // 디오라마 불러오기
+  // 내 프로젝트 목록 가져오기
+  const fetchMyProjects = useCallback(async () => {
+    setIsLoadingProjects(true);
+    try {
+      // 현재 사용자 정보 가져오기
+      const user = await userApi.getMe();
+      
+      // /api/projects/me 엔드포인트를 사용하여 내 프로젝트만 가져오기 (userId 포함)
+      const myProjectsList = await projectApi.getMyProjects({ 
+        sort: 'latest',
+        userId: user.id 
+      });
+      setMyProjects(myProjectsList);
+    } catch (err) {
+      console.error("Failed to fetch my projects:", err);
+      toast.error("프로젝트 목록을 불러오는데 실패했습니다.");
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  }, []);
+
+  // 프로젝트 불러오기 다이얼로그 열기
+  const handleOpenLoadProjectDialog = useCallback(() => {
+    setIsLoadProjectDialogOpen(true);
+    fetchMyProjects();
+  }, [fetchMyProjects]);
+
+  // 프로젝트 선택 및 로드
+  const handleLoadProject = useCallback(async (projectId: number) => {
+    try {
+      setIsLoadingProjects(true);
+      toast.info("프로젝트를 불러오는 중...");
+      
+      const project = await projectApi.getProject(projectId);
+      
+      // 모든 컴포넌트의 파츠 정보를 병렬로 가져오기
+      const partPromises = project.components.map(component => 
+        partApi.getPart(component.partId).catch(err => {
+          console.error(`Failed to get part ${component.partId}:`, err);
+          return null;
+        })
+      );
+      
+      const parts = await Promise.all(partPromises);
+      
+      // 프로젝트의 컴포넌트들을 SceneModel로 변환
+      const models: SceneModel[] = project.components.map((component, index) => {
+        const part = parts[index];
+        return {
+          id: `project-${project.id}-component-${component.id}-${Date.now()}`,
+          partId: component.partId,
+          partType: part?.type || 'OBJECT', // 파츠 타입 설정
+          modelUrl: part?.modelFileUrl, // 파츠의 모델 URL 설정
+          name: component.partName || part?.name || `Component ${index + 1}`,
+          position: { x: component.posX, y: component.posY, z: component.posZ },
+          rotation: { x: component.rotX, y: component.rotY, z: component.rotZ },
+          scale: component.scaleX || 1, // scaleX를 기본값으로 사용
+          visible: true,
+          locked: false,
+        };
+      });
+
+      // 배경 파츠가 있으면 추가
+      if (project.backgroundPartId) {
+        try {
+          const backgroundPart = await partApi.getPart(project.backgroundPartId);
+          if (backgroundPart.modelFileUrl) {
+            const backgroundModel: SceneModel = {
+              id: `project-${project.id}-background-${Date.now()}`,
+              partId: project.backgroundPartId,
+              partType: 'BACKGROUND',
+              modelUrl: backgroundPart.modelFileUrl,
+              name: project.backgroundPartName || backgroundPart.name || '배경',
+              position: { x: 0, y: 0, z: 0 },
+              rotation: { x: 0, y: 0, z: 0 },
+              scale: 1,
+              visible: true,
+              locked: false,
+            };
+            models.push(backgroundModel);
+          }
+        } catch (err) {
+          console.error("Failed to load background part:", err);
+        }
+      }
+
+      setSceneModels(models);
+      setDioramaName(project.title);
+      setModelGroups([]); // 그룹 초기화
+      setSelectedModelIds([]);
+      setIsLoadProjectDialogOpen(false);
+      toast.success(`"${project.title}" 프로젝트를 불러왔습니다.`);
+    } catch (err) {
+      console.error("Failed to load project:", err);
+      toast.error("프로젝트를 불러오는데 실패했습니다.");
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  }, []);
+
+  // 디오라마 불러오기 (로컬 파일 - 레거시)
   const handleImportDiorama = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1191,7 +1487,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         ));
 
         setSceneModels(prev => prev.map(m =>
-          m.id === fileId ? { ...m, partId } : m
+          m.id === fileId ? { ...m, partId, partType: currentUploadData.type } : m
         ));
 
         setPendingUploads(prev => prev.map(u =>
@@ -1203,6 +1499,9 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         }, 3000);
 
         toast.success(`"${currentUploadData.name}" 등록 완료!`);
+        
+        // 업로드 완료 후 부품 목록 새로고침
+        await fetchLibraryParts();
       } catch (error) {
         console.error('Background part upload failed:', error);
         setUploadedFiles(prev => prev.map(f =>
@@ -1256,11 +1555,12 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   };
 
   // 드래그 시작 핸들러
-  const handleDragStart = (e: React.DragEvent, asset: { id?: number; partId?: number; modelUrl?: string; prompt?: string; taskId?: string; name?: string; thumbnail?: string; category?: string; file?: File; previewUrl?: string }) => {
+  const handleDragStart = (e: React.DragEvent, asset: { id?: number; partId?: number; partType?: 'OBJECT' | 'BACKGROUND'; modelUrl?: string; prompt?: string; taskId?: string; name?: string; thumbnail?: string; category?: string; file?: File; previewUrl?: string }) => {
     const dragData = {
       type: asset.modelUrl ? "generated" : asset.file ? "uploaded" : "recommended",
       id: asset.id,
       partId: asset.partId,
+      partType: asset.partType,
       modelUrl: asset.modelUrl,
       prompt: asset.prompt,
       taskId: asset.taskId,
@@ -1312,6 +1612,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         const newModel: SceneModel = {
           id: dragData.taskId || `model-${Date.now()}`,
           partId: dragData.id,
+          partType: dragData.partType || 'OBJECT',
           modelUrl: dragData.modelUrl,
           name: dragData.name || dragData.prompt || "3D 모델",
           position: { x: centerX, y: centerY, z: centerZ },
@@ -1333,6 +1634,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
             const newModel: SceneModel = {
               id: uploadedFile.id,
               partId: uploadedFile.partId,
+              partType: dragData.partType || 'OBJECT',
               modelUrl: fileUrl,
               name: uploadedFile.file.name,
               position: { x: centerX, y: centerY, z: centerZ },
@@ -1360,6 +1662,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         const newModel: SceneModel = {
           id: `recommended-${dragData.name}-${Date.now()}`,
           partId: dragData.id,
+          partType: dragData.partType || 'OBJECT',
           modelUrl: dragData.modelUrl,
           name: dragData.name || "추천 에셋",
           position: { x: centerX, y: centerY, z: centerZ },
@@ -1474,6 +1777,9 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
   // 그룹이 없는 모델들
   const ungroupedModels = sceneModels.filter((m) => !m.groupId);
+  // 타입별로 모델 분리
+  const objectModels = ungroupedModels.filter((m) => !m.partType || m.partType === 'OBJECT');
+  const backgroundModels = ungroupedModels.filter((m) => m.partType === 'BACKGROUND');
 
   // 모델 드래그 시작 핸들러
   const handleModelDragStart = (e: React.MouseEvent, modelId: string) => {
@@ -1914,28 +2220,19 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               <FileDown className="h-3 w-3 mr-1" />
               내보내기
             </Button>
-            <label className="flex-1">
-              <input
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={handleImportDiorama}
-              />
-              <Button size="sm" variant="outline" className="w-full" asChild>
-                <span>
+            <Button size="sm" variant="outline" className="flex-1" onClick={handleOpenLoadProjectDialog}>
                   <Upload className="h-3 w-3 mr-1" />
                   불러오기
-                </span>
               </Button>
-            </label>
           </div>
         </div>
 
         {/* 씬 모델 목록 */}
         <div className="flex-1 overflow-y-auto">
+          {/* 부품 파츠 섹션 */}
           <div className="p-4 border-b">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold">배경 파츠 ({sceneModels.length})</h3>
+              <h3 className="text-sm font-semibold">부품 파츠 ({objectModels.length})</h3>
               <div className="flex gap-1">
                 <Button
                   size="sm"
@@ -1960,7 +2257,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               </div>
             </div>
 
-            {sceneModels.length === 0 ? (
+            {objectModels.length === 0 ? (
               <div className="text-center py-6 text-muted-foreground text-sm">
                 <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p>씬에 모델을 추가하세요</p>
@@ -1968,8 +2265,13 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               </div>
             ) : (
               <div className="space-y-1">
-                {/* 그룹화된 모델들 */}
-                {modelGroups.map((group) => (
+                {/* 그룹화된 모델들 (OBJECT 타입만) */}
+                {modelGroups
+                  .filter(group => group.modelIds.some(id => {
+                    const model = sceneModels.find(m => m.id === id);
+                    return model && (!model.partType || model.partType === 'OBJECT');
+                  }))
+                  .map((group) => (
                   <div key={group.id} className="border rounded-lg overflow-hidden">
                     <div
                       className="flex items-center gap-2 p-2 bg-muted/50 cursor-pointer hover:bg-muted"
@@ -1991,7 +2293,10 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                         className="h-5 text-xs bg-transparent border-none p-0 focus-visible:ring-0"
                       />
                       <Badge variant="secondary" className="ml-auto text-[10px]">
-                        {group.modelIds.length}
+                          {group.modelIds.filter(id => {
+                            const model = sceneModels.find(m => m.id === id);
+                            return model && (!model.partType || model.partType === 'OBJECT');
+                          }).length}
                       </Badge>
                       <Button
                         size="sm"
@@ -2009,7 +2314,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                     {group.expanded && (
                       <div className="pl-4">
                         {sceneModels
-                          .filter((m) => m.groupId === group.id)
+                            .filter((m) => m.groupId === group.id && (!m.partType || m.partType === 'OBJECT'))
                           .map((model) => (
                             <ModelListItem
                               key={model.id}
@@ -2028,8 +2333,130 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                   </div>
                 ))}
 
-                {/* 그룹화되지 않은 모델들 */}
-                {ungroupedModels.map((model) => (
+                {/* 그룹화되지 않은 부품 파츠 모델들 */}
+                {objectModels.map((model) => (
+                  <ModelListItem
+                    key={model.id}
+                    model={model}
+                    isSelected={selectedModelIds.includes(model.id)}
+                    onSelect={(multi) => handleModelSelect(model.id, multi)}
+                    onDelete={() => handleModelDelete(model.id)}
+                    onDuplicate={() => handleDuplicateModel(model.id)}
+                    onToggleVisibility={() => handleToggleVisibility(model.id)}
+                    onToggleLock={() => handleToggleLock(model.id)}
+                    onRename={(name) => handleRenameModel(model.id, name)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 배경 파츠 섹션 */}
+          <div className="p-4 border-b">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold">배경 파츠 ({backgroundModels.length})</h3>
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0"
+                  onClick={handleCreateGroup}
+                  disabled={selectedModelIds.length < 2}
+                  title="그룹 만들기"
+                >
+                  <FolderPlus className="h-3 w-3" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0"
+                  onClick={handleDeleteSelectedModels}
+                  disabled={selectedModelIds.length === 0}
+                  title="선택 삭제"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+
+            {backgroundModels.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground text-sm">
+                <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>씬에 모델을 추가하세요</p>
+                <p className="text-xs mt-1">에셋을 드래그하여 조합하세요</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {/* 그룹화된 모델들 (BACKGROUND 타입만) */}
+                {modelGroups
+                  .filter(group => group.modelIds.some(id => {
+                    const model = sceneModels.find(m => m.id === id);
+                    return model && model.partType === 'BACKGROUND';
+                  }))
+                  .map((group) => (
+                    <div key={group.id} className="border rounded-lg overflow-hidden">
+                      <div
+                        className="flex items-center gap-2 p-2 bg-muted/50 cursor-pointer hover:bg-muted"
+                        onClick={() => handleToggleGroupExpand(group.id)}
+                      >
+                        {group.expanded ? (
+                          <ChevronDown className="h-3 w-3" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3" />
+                        )}
+                        <Layers className="h-3 w-3 text-primary" />
+                        <Input
+                          value={group.name}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleRenameGroup(group.id, e.target.value);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-5 text-xs bg-transparent border-none p-0 focus-visible:ring-0"
+                        />
+                        <Badge variant="secondary" className="ml-auto text-[10px]">
+                          {group.modelIds.filter(id => {
+                            const model = sceneModels.find(m => m.id === id);
+                            return model && model.partType === 'BACKGROUND';
+                          }).length}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 w-5 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUngroupModels(group.id);
+                          }}
+                          title="그룹 해제"
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      {group.expanded && (
+                        <div className="pl-4">
+                          {sceneModels
+                            .filter((m) => m.groupId === group.id && m.partType === 'BACKGROUND')
+                            .map((model) => (
+                              <ModelListItem
+                                key={model.id}
+                                model={model}
+                                isSelected={selectedModelIds.includes(model.id)}
+                                onSelect={(multi) => handleModelSelect(model.id, multi)}
+                                onDelete={() => handleModelDelete(model.id)}
+                                onDuplicate={() => handleDuplicateModel(model.id)}
+                                onToggleVisibility={() => handleToggleVisibility(model.id)}
+                                onToggleLock={() => handleToggleLock(model.id)}
+                                onRename={(name) => handleRenameModel(model.id, name)}
+                              />
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                {/* 그룹화되지 않은 배경 파츠 모델들 */}
+                {backgroundModels.map((model) => (
                   <ModelListItem
                     key={model.id}
                     model={model}
@@ -2204,10 +2631,10 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
             </div>
           )}
 
-          {/* 추천 에셋 */}
+          {/* 파츠 추천 */}
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold">부품 파츠</h3>
+              <h3 className="text-sm font-semibold">파츠 추천</h3>
               <Button
                 variant="ghost"
                 size="sm"
@@ -2217,39 +2644,47 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 <Grid3x3 className="h-3 w-3" />
               </Button>
             </div>
+            {isLoadingLibrary && libraryParts.length === 0 ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 text-primary animate-spin" />
+              </div>
+            ) : (
+              <>
             <div className="grid grid-cols-2 gap-3">
-              {recommendedAssets.map((asset) => {
-                const thumbnailUrl = asset.thumbnailUrl;
-                const imageUrl = thumbnailUrl
-                  ? thumbnailUrl
-                  : `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(asset.name)}`;
+                  {libraryParts
+                    .slice((partsSectionPage - 1) * partsPerPage, partsSectionPage * partsPerPage)
+                    .map((part) => {
+                      const imageUrl = part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
 
                 return (
                   <div
-                    key={asset.id}
+                          key={part.id}
                     draggable={true}
                     onDragStart={(e) => handleDragStart(e, {
-                      ...asset,
-                      modelUrl: asset.glbUrl,
-                      thumbnail: asset.thumbnailUrl || asset.thumbnail,
+                            partId: part.id,
+                            partType: part.type,
+                            modelUrl: part.modelFileUrl,
+                            name: part.name,
+                            thumbnail: part.thumbnailUrl,
+                            category: part.category,
                     })}
                     className="cursor-grab active:cursor-grabbing"
                   >
                     <TravelCard
                       imageUrl={imageUrl}
-                      imageAlt={asset.name}
-                      title={asset.name}
-                      location={asset.category || "3D Model"}
-                      overview={`A 3D ${asset.name} model. Drag and drop into the scene to add it.`}
+                            imageAlt={part.name}
+                            title={part.name}
+                            location={part.category || "3D Model"}
+                            overview={part.description || `A 3D ${part.name} model. Drag and drop into the scene to add it.`}
                       onBookNow={() => {
-                        // 드래그 앤 드롭 대신 클릭으로도 추가 가능하도록
-                        if (asset.glbUrl) {
+                              if (part.modelFileUrl) {
                           const offset = sceneModels.length * 0.5;
                           const newModel: SceneModel = {
-                            id: `recommended-${asset.id}-${Date.now()}`,
-                            partId: asset.id, // 추천 에셋은 이미 id를 가지고 있음
-                            modelUrl: asset.glbUrl,
-                            name: asset.name,
+                                  id: `part-${part.id}-${Date.now()}`,
+                                  partId: part.id,
+                                  partType: part.type,
+                                  modelUrl: part.modelFileUrl,
+                                  name: part.name,
                             position: { x: offset, y: 0, z: offset },
                             rotation: { x: 0, y: 0, z: 0 },
                             scale: 1,
@@ -2258,7 +2693,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                           };
                           setSceneModels((prev) => [...prev, newModel]);
                           setSelectedModelIds([newModel.id]);
-                          toast.success(`${asset.name}이(가) 씬에 추가되었습니다.`);
+                                toast.success(`${part.name}이(가) 씬에 추가되었습니다.`);
                         }
                       }}
                       className="h-[200px]"
@@ -2267,13 +2702,43 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 );
               })}
             </div>
+                {libraryParts.length > partsPerPage && (() => {
+                  const totalPages = Math.ceil(libraryParts.length / partsPerPage);
+                  return (
+                    <div className="flex items-center justify-center gap-3 mt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPartsSectionPage(prev => Math.max(1, prev - 1))}
+                        disabled={partsSectionPage === 1}
+                        className="rounded-xl px-3"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-sm font-medium min-w-[60px] text-center">
+                        {partsSectionPage} / {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPartsSectionPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={partsSectionPage >= totalPages}
+                        className="rounded-xl px-3"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
           </div>
         </div>
       </div>
 
       <Dialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen}>
         <DialogContent
-          className="max-w-[1200px] w-[95vw] max-h-[90vh] overflow-hidden p-0 border-0 shadow-2xl bg-white rounded-2xl"
+          className="max-w-[1200px] sm:max-w-[1200px] w-[95vw] max-h-[90vh] overflow-hidden p-0 border-0 shadow-2xl bg-white rounded-2xl"
         >
           <div
             className="flex flex-col h-[90vh] space-y-0"
@@ -2327,7 +2792,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                     {paginatedParts.map((part) => {
                       const imageUrl = part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
 
@@ -2338,6 +2803,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                           draggable={true}
                           onDragStart={(e) => handleDragStart(e, {
                             partId: part.id,
+                            partType: part.type,
                             modelUrl: part.modelFileUrl, // fetchLibraryParts에서 이미 정문화됨
                             name: part.name,
                             thumbnail: part.thumbnailUrl,
@@ -2357,6 +2823,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                                 const newModel: SceneModel = {
                                   id: `library-${part.id}-${Date.now()}`,
                                   partId: part.id,
+                                  partType: part.type,
                                   modelUrl: modelUrl,
                                   name: part.name,
                                   position: { x: offset, y: 0, z: offset },
@@ -2559,6 +3026,94 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 )}
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 프로젝트 불러오기 다이얼로그 */}
+      <Dialog open={isLoadProjectDialogOpen} onOpenChange={setIsLoadProjectDialogOpen}>
+        <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] overflow-hidden p-0">
+          <div className="p-6 border-b">
+            <h2 className="text-2xl font-bold">내 프로젝트 불러오기</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              저장된 프로젝트를 선택하여 불러오세요
+            </p>
+          </div>
+
+          <div className="overflow-y-auto p-6" style={{ maxHeight: 'calc(90vh - 180px)' }}>
+            {isLoadingProjects ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 text-primary animate-spin" />
+              </div>
+            ) : myProjects.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Layers className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p className="text-lg font-semibold">저장된 프로젝트가 없습니다</p>
+                <p className="text-sm mt-2">프로젝트를 저장하면 여기에 표시됩니다</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {myProjects.map((project) => (
+                  <Card
+                    key={project.id}
+                    className="cursor-pointer hover:shadow-lg transition-all hover:scale-[1.02]"
+                    onClick={() => handleLoadProject(project.id)}
+                  >
+                    <div className="p-4 flex flex-col h-full">
+                      {project.previewImageUrl && (
+                        <div className="aspect-video rounded-lg overflow-hidden mb-3 bg-muted">
+                          <img
+                            src={project.previewImageUrl}
+                            alt={project.title}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )}
+                      <div className="flex-1 flex flex-col">
+                        <h3 className="font-semibold text-lg mb-2 line-clamp-2">{project.title}</h3>
+                        {project.description && (
+                          <p className="text-sm text-muted-foreground mb-3 line-clamp-2 flex-shrink-0">
+                            {project.description}
+                          </p>
+                        )}
+                        <div className="mt-auto">
+                          <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground mb-2">
+                            <span className="flex items-center gap-1.5">
+                              <Layers className="h-3 w-3 flex-shrink-0" />
+                              <span className="whitespace-nowrap">{project.components.length} 개</span>
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <Eye className="h-3 w-3 flex-shrink-0" />
+                              <span className="whitespace-nowrap">{project.viewsCount}</span>
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <span>❤️</span>
+                              <span className="whitespace-nowrap">{project.likesCount}</span>
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground text-center">
+                            {new Date(project.updatedAt).toLocaleDateString('ko-KR', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 border-t flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setIsLoadProjectDialogOpen(false)}
+            >
+              닫기
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
