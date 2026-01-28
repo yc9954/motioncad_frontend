@@ -493,7 +493,8 @@ export function Unified3DScene({
       if (finalUrl.includes(s3BucketDomain)) {
         try {
           const url = new URL(finalUrl);
-          finalUrl = `/s3-proxy${url.pathname}${url.search}`;
+          // query string 제거 - 백엔드 프록시는 AWS SDK를 사용하므로 presigned URL 파라미터 불필요
+          finalUrl = `/s3-proxy${url.pathname}`;
         } catch (e) {
           console.warn('URL parsing failed for S3 model:', finalUrl);
         }
@@ -761,6 +762,15 @@ export function Unified3DScene({
 
         // Get webcam stream
         console.log('[Hand Gesture] Requesting webcam access...');
+
+        // Check if mediaDevices is available (requires HTTPS or localhost)
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error(
+            'Camera access is not available. This feature requires a secure connection (HTTPS) or localhost. ' +
+            'Please access the application via https:// or http://localhost:5173 to use hand gesture controls.'
+          );
+        }
+
         const video = document.createElement('video');
         video.style.display = 'none';
         video.setAttribute('playsinline', '');

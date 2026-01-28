@@ -82,14 +82,14 @@ export default defineConfig({
       },
       // 백엔드 API 프록시 추가
       '/api': {
-        target: 'https://f76640308ac2.ngrok-free.app',
+        target: 'http://ec2-54-180-23-126.ap-northeast-2.compute.amazonaws.com:8080',
         changeOrigin: true,
         secure: false,
         timeout: 60000, // 60초 타임아웃 (대용량 파일 업로드용)
         configure: (proxy, _options) => {
           proxy.on('proxyReq', (proxyReq, req, res) => {
             console.log('[Backend Proxy] Request:', req.method, req.url);
-            
+
             // ngrok-skip-browser-warning 헤더 추가
             proxyReq.setHeader('ngrok-skip-browser-warning', 'true');
 
@@ -97,7 +97,7 @@ export default defineConfig({
             if (req.headers['authorization']) {
               proxyReq.setHeader('Authorization', req.headers['authorization']);
             }
-            
+
             // FormData 업로드 시 Content-Type을 자동으로 설정하도록 함
             // (multipart/form-data는 boundary가 포함되어야 하므로 자동 설정에 맡김)
             if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
@@ -108,7 +108,7 @@ export default defineConfig({
 
           proxy.on('proxyRes', (proxyRes, req, res) => {
             console.log('[Backend Proxy] Response:', proxyRes.statusCode, req.url);
-            
+
             // CORS 헤더 추가
             proxyRes.headers['Access-Control-Allow-Origin'] = '*';
             proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS';
@@ -124,10 +124,10 @@ export default defineConfig({
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*',
               });
-              res.end(JSON.stringify({ 
-                error: 'Proxy error', 
+              res.end(JSON.stringify({
+                error: 'Proxy error',
                 message: err.message,
-                code: err.code 
+                code: err.code
               }));
             }
           });
@@ -135,7 +135,7 @@ export default defineConfig({
       },
       // S3 버킷 프록시 (CORS 문제 해결용)
       '/s3-proxy': {
-        target: 'https://madcampw3withyc1.s3.ap-northeast-2.amazonaws.com',
+        target: 'http://ec2-54-180-23-126.ap-northeast-2.compute.amazonaws.com:8080',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/s3-proxy/, ''),
         secure: true,

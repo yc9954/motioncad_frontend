@@ -150,10 +150,12 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           } catch (e) { /* ignore */ }
         }
         // 2. S3 URL 처리 (프록시 /s3-proxy 사용)
+        // presigned URL의 query string은 제거 (백엔드가 AWS SDK로 직접 S3 접근)
         else if (modelFileUrl.includes('madcampw3withyc1.s3.ap-northeast-2.amazonaws.com')) {
           try {
             const url = new URL(modelFileUrl);
-            modelFileUrl = `/s3-proxy${url.pathname}${url.search}`;
+            // query string 제거 - 백엔드 프록시는 AWS SDK를 사용하므로 presigned URL 파라미터 불필요
+            modelFileUrl = `/s3-proxy${url.pathname}`;
           } catch (e) { /* ignore */ }
         }
 
