@@ -2517,7 +2517,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                       className="flex-1 h-8"
                       onClick={() => {
                         setTransferMode("receive");
-                        toast.info("수신 모드: 손바닥 → 그랩 2초로 서버에서 GLB 파일을 수신합니다");
+                        toast.info("수신 모드: 주먹 → 손바닥 펼침 2초로 서버에서 GLB 파일을 수신합니다");
                       }}
                     >
                       <Download className="h-3 w-3 mr-1" />

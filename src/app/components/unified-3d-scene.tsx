@@ -65,6 +65,7 @@ export function Unified3DScene({
   const grabTimerRef = useRef<NodeJS.Timeout | null>(null);
   const grabStartTimeRef = useRef<number | null>(null);
   const wasOpenPalmRef = useRef<boolean>(false);
+  const wasFistRef = useRef<boolean>(false); // 수신 모드: 주먹 감지 여부
   const transferStateRef = useRef<'idle' | 'sending' | 'receiving'>('idle');
   const lastCheckedFileIdRef = useRef<string | null>(null);
   const lastLogTimeRef = useRef<{ [key: string]: number }>({});
@@ -1090,10 +1091,95 @@ export function Unified3DScene({
         // 그랩 제스처 처리 함수
         const handleGrabGesture = (grabHand: Landmark[] | null, openPalmHand: Landmark[] | null) => {
           const now = Date.now();
+          const currentMode = transferModeRef.current;
 
+          // 전송/수신 중이면 제스처 무시
+          if (transferStateRef.current === 'sending' || transferStateRef.current === 'receiving') {
+            return;
+          }
+
+          // 수신 모드: 주먹 → 손바닥 펼침 → 2초 유지
+          if (currentMode === 'receive') {
+            // 주먹(그랩) 감지
+            if (grabHand) {
+              if (!wasFistRef.current) {
+                wasFistRef.current = true;
+                if (!lastLogTimeRef.current['fistDetected'] || now - lastLogTimeRef.current['fistDetected'] > 3000) {
+                  console.log('[Transfer] 주먹 감지됨 - 수신 모드');
+                  lastLogTimeRef.current['fistDetected'] = now;
+                }
+                if (!lastToastTimeRef.current['fistDetected'] || now - lastToastTimeRef.current['fistDetected'] > 3000) {
+                  toast.info('주먹 감지됨. 이제 손바닥을 펼쳐주세요.');
+                  lastToastTimeRef.current['fistDetected'] = now;
+                }
+              }
+              // 손바닥을 펼치기 전까지는 대기
+              return;
+            }
+
+            // 손바닥 펼침 감지 (주먹을 먼저 감지한 후)
+            if (openPalmHand && wasFistRef.current) {
+              // 손바닥 펼침 시작 시간 기록
+              if (grabStartTimeRef.current === null) {
+                grabStartTimeRef.current = now;
+                if (!lastLogTimeRef.current['palmOpen'] || now - lastLogTimeRef.current['palmOpen'] > 3000) {
+                  console.log('[Transfer] 손바닥 펼침 감지됨 - 2초간 유지하세요');
+                  lastLogTimeRef.current['palmOpen'] = now;
+                }
+                if (!lastToastTimeRef.current['palmOpen'] || now - lastToastTimeRef.current['palmOpen'] > 3000) {
+                  toast.info('손바닥 감지됨. 2초간 유지하세요.');
+                  lastToastTimeRef.current['palmOpen'] = now;
+                }
+              }
+
+              // 2초 동안 손바닥 상태 유지 확인
+              const palmDuration = now - grabStartTimeRef.current;
+              const remaining = Math.ceil((2000 - palmDuration) / 1000);
+
+              if (palmDuration >= 2000) {
+                // 2초 경과 - 수신 시작
+                if (transferStateRef.current === 'idle') {
+                  if (!lastLogTimeRef.current['receiveStart'] || now - lastLogTimeRef.current['receiveStart'] > 5000) {
+                    console.log('[Transfer] 2초 경과 - 수신 시작');
+                    lastLogTimeRef.current['receiveStart'] = now;
+                  }
+                  handleReceiveGLB();
+                  // 상태 리셋
+                  grabStartTimeRef.current = null;
+                  wasFistRef.current = false;
+                }
+              } else {
+                // 2초 미만 - 진행 중 표시
+                if (remaining === 1 && palmDuration > 1000) {
+                  if (!lastToastTimeRef.current['palmProgress'] || now - lastToastTimeRef.current['palmProgress'] > 2000) {
+                    toast.info(`수신 준비 중... (${remaining}초)`);
+                    lastToastTimeRef.current['palmProgress'] = now;
+                  }
+                }
+              }
+            } else if (!openPalmHand && wasFistRef.current) {
+              // 손바닥을 펼치지 않았거나 다시 주먹으로 돌아간 경우
+              if (grabStartTimeRef.current !== null) {
+                // 손바닥을 펼쳤다가 다시 주먹으로 돌아간 경우
+                if (!lastToastTimeRef.current['palmCancel'] || now - lastToastTimeRef.current['palmCancel'] > 3000) {
+                  toast.warning('손바닥이 해제되었습니다. 다시 손바닥을 펼쳐주세요.');
+                  lastToastTimeRef.current['palmCancel'] = now;
+                }
+                grabStartTimeRef.current = null;
+              }
+            } else if (!grabHand && !openPalmHand) {
+              // 주먹도 손바닥도 아닌 경우 - 상태 리셋
+              if (wasFistRef.current) {
+                wasFistRef.current = false;
+                grabStartTimeRef.current = null;
+              }
+            }
+            return;
+          }
+
+          // 전송 모드: 손바닥 → 주먹 → 2초 유지 (기존 로직)
           // 손바닥을 펴고 있는 상태 감지
           if (openPalmHand) {
-            // 손바닥 감지 로그 제거 - 너무 자주 출력됨
             wasOpenPalmRef.current = true;
             // 그랩 타이머 리셋
             if (grabTimerRef.current) {
@@ -1110,30 +1196,23 @@ export function Unified3DScene({
             return;
           }
 
-          // 전송/수신 중이면 그랩 제스처 무시
-          if (transferStateRef.current === 'sending' || transferStateRef.current === 'receiving') {
-            return;
-          }
-
           // 그랩 제스처 감지 (손바닥을 펴고 있다가 그랩으로 전환)
           if (grabHand) {
             if (!wasOpenPalmRef.current) {
               // 손바닥을 펴지 않고 바로 그랩한 경우 - 손바닥 상태로 간주
               wasOpenPalmRef.current = true;
-              // 로그 제거 - 너무 자주 출력됨
               return;
             }
 
             // 그랩 시작 시간 기록
             if (grabStartTimeRef.current === null) {
               grabStartTimeRef.current = now;
-              const currentMode = transferModeRef.current;
               if (!lastLogTimeRef.current['grabStart'] || now - lastLogTimeRef.current['grabStart'] > 3000) {
-                console.log(`[Transfer] 그랩 감지됨 - ${currentMode === 'send' ? '전송' : '수신'} 모드`);
+                console.log('[Transfer] 그랩 감지됨 - 전송 모드');
                 lastLogTimeRef.current['grabStart'] = now;
               }
               if (!lastToastTimeRef.current['grabStart'] || now - lastToastTimeRef.current['grabStart'] > 3000) {
-                toast.info(`${currentMode === 'send' ? '전송' : '수신'} 준비 중... 2초간 유지하세요`);
+                toast.info('전송 준비 중... 2초간 유지하세요');
                 lastToastTimeRef.current['grabStart'] = now;
               }
             }
@@ -1143,19 +1222,13 @@ export function Unified3DScene({
             const remaining = Math.ceil((2000 - grabDuration) / 1000);
 
             if (grabDuration >= 2000) {
-              // 2초 경과 - 전송/수신 상태로 전환
+              // 2초 경과 - 전송 시작
               if (transferStateRef.current === 'idle') {
-                const currentMode = transferModeRef.current;
-                if (!lastLogTimeRef.current['grabComplete'] || now - lastLogTimeRef.current['grabComplete'] > 5000) {
-                  console.log(`[Transfer] 2초 경과 - ${currentMode === 'send' ? '전송' : '수신'} 시작`);
-                  lastLogTimeRef.current['grabComplete'] = now;
+                if (!lastLogTimeRef.current['sendStart'] || now - lastLogTimeRef.current['sendStart'] > 5000) {
+                  console.log('[Transfer] 2초 경과 - 전송 시작');
+                  lastLogTimeRef.current['sendStart'] = now;
                 }
-                if (currentMode === 'send') {
-                  handleSendGLB();
-                } else {
-                  // handleReceiveGLB 내부에서 상태를 설정하므로 여기서는 호출만
-                  handleReceiveGLB();
-                }
+                handleSendGLB();
                 // 상태 리셋
                 grabStartTimeRef.current = null;
                 wasOpenPalmRef.current = false;
@@ -1163,9 +1236,8 @@ export function Unified3DScene({
             } else {
               // 2초 미만 - 진행 중 표시 (1초마다, 중복 방지)
               if (remaining === 1 && grabDuration > 1000) {
-                const currentMode = transferModeRef.current;
                 if (!lastToastTimeRef.current['grabProgress'] || now - lastToastTimeRef.current['grabProgress'] > 2000) {
-                  toast.info(`${currentMode === 'send' ? '전송' : '수신'} 준비 중... (${remaining}초)`);
+                  toast.info(`전송 준비 중... (${remaining}초)`);
                   lastToastTimeRef.current['grabProgress'] = now;
                 }
               }
@@ -1173,14 +1245,11 @@ export function Unified3DScene({
           } else {
             // 그랩이 아니거나 손바닥을 펴지 않은 상태
             if (grabStartTimeRef.current !== null) {
-              // 로그 제거 - 너무 자주 출력됨
-              // toast만 표시 (더 긴 간격)
               if (!lastToastTimeRef.current['grabCancel'] || now - lastToastTimeRef.current['grabCancel'] > 3000) {
                 toast.warning('그랩이 해제되었습니다. 다시 시도하세요.');
                 lastToastTimeRef.current['grabCancel'] = now;
               }
             }
-            // 손바닥 상태는 유지 (손을 뗀 경우가 아니라면)
             grabStartTimeRef.current = null;
             if (grabTimerRef.current) {
               clearTimeout(grabTimerRef.current);
