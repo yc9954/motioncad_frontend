@@ -997,10 +997,29 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       }
 
       // 씬 모델을 컴포넌트 요청 형식으로 변환 (partId가 있는 모델만)
+      console.log('[Save Project] Total scene models:', sceneModels.length);
+
+      // 배경 모델 찾기
+      const backgroundModel = sceneModels.find(m => m.partType === 'BACKGROUND' && m.partId && m.partId > 0);
+      const backgroundPartId = backgroundModel?.partId;
+
+      if (backgroundModel) {
+        console.log('[Save Project] Found background model:', backgroundModel.name, 'partId:', backgroundPartId);
+      }
+
       const components: ComponentRequest[] = sceneModels
-        .filter(m => m.modelUrl && m.visible && m.partId && m.partId > 0) // partId가 있어야 함
+        .filter(m => {
+          // 배경은 backgroundPartId로 따로 저장하므로 컴포넌트 목록에서 제외할 수도 있지만, 
+          // 백엔드 구조에 따라 포함 여부 결정. 여기서는 OBJECT 타입만 컴포넌트로 전송
+          const isValidObject = m.partType !== 'BACKGROUND' && m.modelUrl && m.visible && m.partId && m.partId > 0;
+          if (!isValidObject && m.partType !== 'BACKGROUND') {
+            console.warn('[Save Project] Skipping model:', m.name,
+              'reason:', !m.modelUrl ? 'no modelUrl' : !m.visible ? 'invisible' : !m.partId ? 'no partId' : 'unknown');
+          }
+          return isValidObject;
+        })
         .map(m => ({
-          partId: m.partId!, // partId가 있는 것만 필터링했으므로 non-null assertion 사용
+          partId: m.partId!,
           posX: m.position.x,
           posY: m.position.y,
           posZ: m.position.z,
@@ -1012,14 +1031,17 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           scaleZ: m.scale,
         }));
 
-      console.log('[Save Project] Components to save:', components);
-      console.log('[Save Project] Components count:', components.length);
+      console.log('[Save Project] Components to save:', components.length);
+      if (backgroundPartId) {
+        console.log('[Save Project] Background to save:', backgroundPartId);
+      }
 
       // 프로젝트 요청 생성
       const projectRequest: ProjectRequest = {
         title: dioramaName,
         description: `Created with ${sceneModels.length} models`,
         isPublic: false,
+        backgroundPartId: backgroundPartId, // 배경 파츠 ID 명시적 추가
         components: components,
       };
 
@@ -1027,13 +1049,11 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       let projectId: number;
       try {
         projectId = await projectApi.saveProject(userId, projectRequest, currentProjectId);
+        console.log('[Save Project] Project saved successfully. ID:', projectId);
       } catch (error) {
         // 프로젝트를 찾을 수 없는 경우 (404 또는 500 에러), 새 프로젝트로 생성
-        if (error instanceof Error && (
-          error.message.includes('Project not found') ||
-          error.message.includes('500') ||
-          error.message.includes('404')
-        )) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        if (errorMsg.includes('Project not found') || errorMsg.includes('500') || errorMsg.includes('404')) {
           console.warn('기존 프로젝트를 찾을 수 없습니다. 새 프로젝트로 생성합니다.');
           // currentProjectId를 제거하고 새 프로젝트로 생성
           localStorage.removeItem('currentProjectId');
