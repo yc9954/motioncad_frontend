@@ -133,7 +133,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [sortBy, setSortBy] = useState<'latest' | 'name'>('latest');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 9; // 한 행에 3개씩 3행 (총 9개)
-  
+
   // 파츠 추천 섹션용 상태
   const [partsSectionPage, setPartsSectionPage] = useState(1);
   const partsPerPage = 6; // 파츠 추천 섹션은 6개씩
@@ -154,21 +154,21 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
 
         // modelFileUrl 정규화
         if (modelFileUrl) {
-        // 1. ngrok URL 처리
-        if (modelFileUrl.includes('ngrok-free.app')) {
-          try {
-            const url = new URL(modelFileUrl);
-            modelFileUrl = url.pathname + url.search;
-          } catch (e) { /* ignore */ }
-        }
-        // 2. S3 URL 처리 (프록시 /s3-proxy 사용)
-        // presigned URL의 query string은 제거 (백엔드가 AWS SDK로 직접 S3 접근)
-        else if (modelFileUrl.includes('madcampw3withyc1.s3.ap-northeast-2.amazonaws.com')) {
-          try {
-            const url = new URL(modelFileUrl);
-            // query string 제거 - 백엔드 프록시는 AWS SDK를 사용하므로 presigned URL 파라미터 불필요
-            modelFileUrl = `/s3-proxy${url.pathname}`;
-          } catch (e) { /* ignore */ }
+          // 1. ngrok URL 처리
+          if (modelFileUrl.includes('ngrok-free.app')) {
+            try {
+              const url = new URL(modelFileUrl);
+              modelFileUrl = url.pathname + url.search;
+            } catch (e) { /* ignore */ }
+          }
+          // 2. S3 URL 처리 (프록시 /s3-proxy 사용)
+          // presigned URL의 query string은 제거 (백엔드가 AWS SDK로 직접 S3 접근)
+          else if (modelFileUrl.includes('madcampw3withyc1.s3.ap-northeast-2.amazonaws.com')) {
+            try {
+              const url = new URL(modelFileUrl);
+              // query string 제거 - 백엔드 프록시는 AWS SDK를 사용하므로 presigned URL 파라미터 불필요
+              modelFileUrl = `/s3-proxy${url.pathname}`;
+            } catch (e) { /* ignore */ }
           }
         }
 
@@ -259,7 +259,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
             // modelFileUrl이 상대 경로인 경우 API_BASE_URL 추가
             let glbUrl = part.modelFileUrl;
             if (glbUrl && !glbUrl.startsWith('http')) {
-              const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://aee5a6d3e5e3.ngrok-free.app';
+              const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://ec2-54-180-23-126.ap-northeast-2.compute.amazonaws.com:8080';
               glbUrl = `${apiBaseUrl}${glbUrl.startsWith('/') ? '' : '/'}${glbUrl}`;
             }
 
@@ -284,7 +284,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       );
 
       // 업데이트된 부품으로 목록 갱신
-      const hasUpdates = updatedParts.some((updated, index) => 
+      const hasUpdates = updatedParts.some((updated, index) =>
         updated.thumbnailUrl !== partsToProcess[index].thumbnailUrl
       );
 
@@ -417,33 +417,33 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const generateThumbnailFromGLBUrl = async (glbUrl: string): Promise<string | null> => {
     try {
       console.log(`[Thumbnail] GLB 파일 다운로드 시작: ${glbUrl}`);
-      
+
       // GLB 파일을 fetch하여 File 객체로 변환
       const response = await fetch(glbUrl, {
         headers: {
           'ngrok-skip-browser-warning': 'true',
         },
       });
-      
+
       if (!response.ok) {
         console.warn(`[Thumbnail] GLB 다운로드 실패 (${response.status}): ${response.statusText}`);
         return null;
       }
-      
+
       const blob = await response.blob();
       console.log(`[Thumbnail] GLB 파일 다운로드 완료 (${blob.size} bytes)`);
-      
+
       if (blob.size === 0) {
         console.warn(`[Thumbnail] GLB 파일이 비어있습니다.`);
         return null;
       }
-      
+
       const file = new File([blob], 'model.glb', { type: 'model/gltf-binary' });
 
       // 썸네일 생성
       console.log(`[Thumbnail] 썸네일 생성 시작...`);
       const thumbnailFile = await generateThumbnailFromGLB(file);
-      
+
       if (!thumbnailFile) {
         console.warn(`[Thumbnail] 썸네일 생성 실패 (null 반환)`);
         return null;
@@ -965,14 +965,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       // 현재 사용자 정보 가져오기
       const user = await userApi.getMe();
       const userId = user.id;
-      
+
       console.log('[Save Project] Current user:', user);
       console.log('[Save Project] Using userId:', userId);
-      
+
       if (!userId || userId === 0) {
         throw new Error('사용자 ID를 가져올 수 없습니다. 로그인 상태를 확인해주세요.');
       }
-      
+
       // currentProjectId가 있으면 해당 프로젝트가 존재하는지 확인
       let currentProjectId: number | undefined = undefined;
       const storedProjectId = localStorage.getItem('currentProjectId');
@@ -1005,7 +1005,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           scaleY: m.scale,
           scaleZ: m.scale,
         }));
-      
+
       console.log('[Save Project] Components to save:', components);
       console.log('[Save Project] Components count:', components.length);
 
@@ -1024,7 +1024,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
       } catch (error) {
         // 프로젝트를 찾을 수 없는 경우 (404 또는 500 에러), 새 프로젝트로 생성
         if (error instanceof Error && (
-          error.message.includes('Project not found') || 
+          error.message.includes('Project not found') ||
           error.message.includes('500') ||
           error.message.includes('404')
         )) {
@@ -1168,11 +1168,11 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     try {
       // 현재 사용자 정보 가져오기
       const user = await userApi.getMe();
-      
+
       // /api/projects/me 엔드포인트를 사용하여 내 프로젝트만 가져오기 (userId 포함)
-      const myProjectsList = await projectApi.getMyProjects({ 
+      const myProjectsList = await projectApi.getMyProjects({
         sort: 'latest',
-        userId: user.id 
+        userId: user.id
       });
       setMyProjects(myProjectsList);
     } catch (err) {
@@ -1194,19 +1194,19 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
     try {
       setIsLoadingProjects(true);
       toast.info("프로젝트를 불러오는 중...");
-      
+
       const project = await projectApi.getProject(projectId);
-      
+
       // 모든 컴포넌트의 파츠 정보를 병렬로 가져오기
-      const partPromises = project.components.map(component => 
+      const partPromises = project.components.map(component =>
         partApi.getPart(component.partId).catch(err => {
           console.error(`Failed to get part ${component.partId}:`, err);
           return null;
         })
       );
-      
+
       const parts = await Promise.all(partPromises);
-      
+
       // 프로젝트의 컴포넌트들을 SceneModel로 변환
       const models: SceneModel[] = project.components.map((component, index) => {
         const part = parts[index];
@@ -1501,7 +1501,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
         }, 3000);
 
         toast.success(`"${currentUploadData.name}" 등록 완료!`);
-        
+
         // 업로드 완료 후 부품 목록 새로고침
         await fetchLibraryParts();
       } catch (error) {
@@ -2223,9 +2223,9 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               내보내기
             </Button>
             <Button size="sm" variant="outline" className="flex-1" onClick={handleOpenLoadProjectDialog}>
-                  <Upload className="h-3 w-3 mr-1" />
-                  불러오기
-              </Button>
+              <Upload className="h-3 w-3 mr-1" />
+              불러오기
+            </Button>
           </div>
         </div>
 
@@ -2274,66 +2274,66 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                     return model && (!model.partType || model.partType === 'OBJECT');
                   }))
                   .map((group) => (
-                  <div key={group.id} className="border rounded-lg overflow-hidden">
-                    <div
-                      className="flex items-center gap-2 p-2 bg-muted/50 cursor-pointer hover:bg-muted"
-                      onClick={() => handleToggleGroupExpand(group.id)}
-                    >
-                      {group.expanded ? (
-                        <ChevronDown className="h-3 w-3" />
-                      ) : (
-                        <ChevronRight className="h-3 w-3" />
-                      )}
-                      <Layers className="h-3 w-3 text-primary" />
-                      <Input
-                        value={group.name}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          handleRenameGroup(group.id, e.target.value);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="h-5 text-xs bg-transparent border-none p-0 focus-visible:ring-0"
-                      />
-                      <Badge variant="secondary" className="ml-auto text-[10px]">
+                    <div key={group.id} className="border rounded-lg overflow-hidden">
+                      <div
+                        className="flex items-center gap-2 p-2 bg-muted/50 cursor-pointer hover:bg-muted"
+                        onClick={() => handleToggleGroupExpand(group.id)}
+                      >
+                        {group.expanded ? (
+                          <ChevronDown className="h-3 w-3" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3" />
+                        )}
+                        <Layers className="h-3 w-3 text-primary" />
+                        <Input
+                          value={group.name}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleRenameGroup(group.id, e.target.value);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-5 text-xs bg-transparent border-none p-0 focus-visible:ring-0"
+                        />
+                        <Badge variant="secondary" className="ml-auto text-[10px]">
                           {group.modelIds.filter(id => {
                             const model = sceneModels.find(m => m.id === id);
                             return model && (!model.partType || model.partType === 'OBJECT');
                           }).length}
-                      </Badge>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-5 w-5 p-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleUngroupModels(group.id);
-                        }}
-                        title="그룹 해제"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    {group.expanded && (
-                      <div className="pl-4">
-                        {sceneModels
-                            .filter((m) => m.groupId === group.id && (!m.partType || m.partType === 'OBJECT'))
-                          .map((model) => (
-                            <ModelListItem
-                              key={model.id}
-                              model={model}
-                              isSelected={selectedModelIds.includes(model.id)}
-                              onSelect={(multi) => handleModelSelect(model.id, multi)}
-                              onDelete={() => handleModelDelete(model.id)}
-                              onDuplicate={() => handleDuplicateModel(model.id)}
-                              onToggleVisibility={() => handleToggleVisibility(model.id)}
-                              onToggleLock={() => handleToggleLock(model.id)}
-                              onRename={(name) => handleRenameModel(model.id, name)}
-                            />
-                          ))}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 w-5 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUngroupModels(group.id);
+                          }}
+                          title="그룹 해제"
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      {group.expanded && (
+                        <div className="pl-4">
+                          {sceneModels
+                            .filter((m) => m.groupId === group.id && (!m.partType || m.partType === 'OBJECT'))
+                            .map((model) => (
+                              <ModelListItem
+                                key={model.id}
+                                model={model}
+                                isSelected={selectedModelIds.includes(model.id)}
+                                onSelect={(multi) => handleModelSelect(model.id, multi)}
+                                onDelete={() => handleModelDelete(model.id)}
+                                onDuplicate={() => handleDuplicateModel(model.id)}
+                                onToggleVisibility={() => handleToggleVisibility(model.id)}
+                                onToggleLock={() => handleToggleLock(model.id)}
+                                onRename={(name) => handleRenameModel(model.id, name)}
+                              />
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
 
                 {/* 그룹화되지 않은 부품 파츠 모델들 */}
                 {objectModels.map((model) => (
@@ -2652,58 +2652,58 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               </div>
             ) : (
               <>
-            <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   {libraryParts
                     .slice((partsSectionPage - 1) * partsPerPage, partsSectionPage * partsPerPage)
                     .map((part) => {
                       const imageUrl = part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
 
-                return (
-                  <div
+                      return (
+                        <div
                           key={part.id}
-                    draggable={true}
-                    onDragStart={(e) => handleDragStart(e, {
+                          draggable={true}
+                          onDragStart={(e) => handleDragStart(e, {
                             partId: part.id,
                             partType: part.type,
                             modelUrl: part.modelFileUrl,
                             name: part.name,
                             thumbnail: part.thumbnailUrl,
                             category: part.category,
-                    })}
-                    className="cursor-grab active:cursor-grabbing"
-                  >
-                    <TravelCard
-                      imageUrl={imageUrl}
+                          })}
+                          className="cursor-grab active:cursor-grabbing"
+                        >
+                          <TravelCard
+                            imageUrl={imageUrl}
                             imageAlt={part.name}
                             title={part.name}
                             location={part.category || "3D Model"}
                             overview={part.description || `A 3D ${part.name} model. Drag and drop into the scene to add it.`}
-                      onBookNow={() => {
+                            onBookNow={() => {
                               if (part.modelFileUrl) {
-                          const offset = sceneModels.length * 0.5;
-                          const newModel: SceneModel = {
+                                const offset = sceneModels.length * 0.5;
+                                const newModel: SceneModel = {
                                   id: `part-${part.id}-${Date.now()}`,
                                   partId: part.id,
                                   partType: part.type,
                                   modelUrl: part.modelFileUrl,
                                   name: part.name,
-                            position: { x: offset, y: 0, z: offset },
-                            rotation: { x: 0, y: 0, z: 0 },
-                            scale: 1,
-                            visible: true,
-                            locked: false,
-                          };
-                          setSceneModels((prev) => [...prev, newModel]);
-                          setSelectedModelIds([newModel.id]);
+                                  position: { x: offset, y: 0, z: offset },
+                                  rotation: { x: 0, y: 0, z: 0 },
+                                  scale: 1,
+                                  visible: true,
+                                  locked: false,
+                                };
+                                setSceneModels((prev) => [...prev, newModel]);
+                                setSelectedModelIds([newModel.id]);
                                 toast.success(`${part.name}이(가) 씬에 추가되었습니다.`);
-                        }
-                      }}
-                      className="h-[200px]"
-                    />
-                  </div>
-                );
-              })}
-            </div>
+                              }
+                            }}
+                            className="h-[200px]"
+                          />
+                        </div>
+                      );
+                    })}
+                </div>
                 {libraryParts.length > partsPerPage && (() => {
                   const totalPages = Math.ceil(libraryParts.length / partsPerPage);
                   return (

@@ -3,7 +3,7 @@
 // 개발 환경에서는 Vite 프록시를 사용하여 CORS 문제 해결
 export const API_BASE_URL = import.meta.env.DEV
   ? '' // 개발 환경: Vite 프록시 사용 (/api로 시작)
-  : (import.meta.env.VITE_API_BASE_URL || 'https://aee5a6d3e5e3.ngrok-free.app');
+  : (import.meta.env.VITE_API_BASE_URL || 'http://ec2-54-180-23-126.ap-northeast-2.compute.amazonaws.com:8080');
 
 export const getOAuth2Url = (provider: string) => {
   return `${API_BASE_URL}/oauth2/authorization/${provider}`;
@@ -359,7 +359,7 @@ export const projectApi = {
   ): Promise<number> => {
     console.log('[saveProject] Received userId:', userId);
     console.log('[saveProject] projectId:', projectId);
-    
+
     const queryParams = new URLSearchParams();
     queryParams.append('userId', userId.toString());
     if (projectId) queryParams.append('projectId', projectId.toString());
