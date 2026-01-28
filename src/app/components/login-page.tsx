@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { GlassCard, GlassCardHeader, GlassCardTitle, GlassCardContent, GlassCardDescription, GlassCardAction, GlassCardFooter } from "@/app/components/ui/glass-card";
 import { Button } from '@/app/components/ui/button'
 import { Label } from '@/app/components/ui/label'
@@ -6,6 +6,7 @@ import { Input } from '@/app/components/ui/input'
 import { authApi, getOAuth2Url } from "@/lib/api";
 import { toast } from "sonner";
 import { FaGoogle } from 'react-icons/fa';
+import { Component } from "@/components/ui/flow-gradient-hero-section";
 
 // Google OAuth URL 생성
 const getGoogleOAuthUrl = (): string => {
@@ -24,6 +25,16 @@ export function LoginPage({ onLoginSuccess, onNavigateToSignup }: LoginPageProps
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  // 다크 테마 강제 적용
+  useEffect(() => {
+    document.documentElement.classList.add('dark');
+    document.body.classList.add('dark');
+    return () => {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    };
+  }, []);
 
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) {
@@ -60,77 +71,85 @@ export function LoginPage({ onLoginSuccess, onNavigateToSignup }: LoginPageProps
   };
 
   return (
-    <div className='bg-[url(https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=2670&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)] w-full h-screen flex items-center justify-center bg-cover bg-center'>
-      <GlassCard className="w-full max-w-sm">
-        <GlassCardHeader>
-          <GlassCardTitle>Login to your account</GlassCardTitle>
-          <GlassCardDescription>
-            Enter your email below to login to your account
-          </GlassCardDescription>
-          <GlassCardAction>
-            <Button variant="link" onClick={onNavigateToSignup}>
-              Sign Up
-            </Button>
-          </GlassCardAction>
-        </GlassCardHeader>
-        <GlassCardContent>
-          <form onSubmit={handleLogin}>
-            <div className="flex flex-col gap-6">
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="m@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      toast.info("비밀번호 찾기 기능은 준비 중입니다.");
-                    }}
-                    className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
-                  >
-                    Forgot your password?
-                  </a>
+    <div className="relative w-full h-screen">
+      <Component
+        title=""
+        ctaText=""
+        onCtaClick={() => {}}
+        showPauseButton={false}
+      />
+      <div className="absolute inset-0 flex items-center justify-center z-10">
+        <GlassCard className="w-full max-w-sm">
+          <GlassCardHeader>
+            <GlassCardTitle>Login to your account</GlassCardTitle>
+            <GlassCardDescription>
+              Enter your email below to login to your account
+            </GlassCardDescription>
+            <GlassCardAction>
+              <Button variant="link" onClick={onNavigateToSignup}>
+                Sign Up
+              </Button>
+            </GlassCardAction>
+          </GlassCardHeader>
+          <GlassCardContent>
+            <form onSubmit={handleLogin}>
+              <div className="flex flex-col gap-6">
+                <div className="grid gap-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="m@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
                 </div>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+                <div className="grid gap-2">
+                  <div className="flex items-center">
+                    <Label htmlFor="password">Password</Label>
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        toast.info("비밀번호 찾기 기능은 준비 중입니다.");
+                      }}
+                      className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
+                    >
+                      Forgot your password?
+                    </a>
+                  </div>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
               </div>
-            </div>
-          </form>
-        </GlassCardContent>
-        <GlassCardFooter className="flex-col gap-2">
-          <Button
-            type="submit"
-            className="w-full"
-            onClick={handleLogin}
-            disabled={isLoading}
-          >
-            {isLoading ? "Logging in..." : "Login"}
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full flex items-center gap-2"
-            onClick={handleGoogleLogin}
-          >
-            <FaGoogle className="text-red-500" />
-            Login with Google
-          </Button>
-        </GlassCardFooter>
-      </GlassCard>
+            </form>
+          </GlassCardContent>
+          <GlassCardFooter className="flex-col gap-2">
+            <Button
+              type="submit"
+              className="w-full"
+              onClick={handleLogin}
+              disabled={isLoading}
+            >
+              {isLoading ? "Logging in..." : "Login"}
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full flex items-center gap-2"
+              onClick={handleGoogleLogin}
+            >
+              <FaGoogle className="text-red-500" />
+              Login with Google
+            </Button>
+          </GlassCardFooter>
+        </GlassCard>
+      </div>
     </div>
   );
 }
