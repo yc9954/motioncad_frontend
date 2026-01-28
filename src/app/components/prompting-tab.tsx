@@ -126,6 +126,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [libraryParts, setLibraryParts] = useState<PartResponse[]>([]);
+  const [localThumbnailMap, setLocalThumbnailMap] = useState<Record<number, string>>({});
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [isLoadProjectDialogOpen, setIsLoadProjectDialogOpen] = useState(false);
   const [myProjects, setMyProjects] = useState<ProjectResponse[]>([]);
@@ -142,8 +143,13 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   const fetchLibraryParts = useCallback(async () => {
     setIsLoadingLibrary(true);
     try {
-      // 모든 OBJECT 타입 파츠 가져오기
-      const parts = await partApi.getParts({ type: 'OBJECT' });
+      // OBJECT와 BACKGROUND 타입 파츠 모두 가져오기
+      const [objectParts, backgroundParts] = await Promise.all([
+        partApi.getParts({ type: 'OBJECT' }),
+        partApi.getParts({ type: 'BACKGROUND' })
+      ]);
+
+      const parts = [...objectParts, ...backgroundParts];
 
       // URL 정규화: ngrok 또는 S3 전체 URL인 경우 상대 경로(프록시)로 변경
       const normalizedParts = parts.map(part => {
@@ -349,8 +355,8 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
   // 백그라운드 업로드 목록
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
 
-  // 첫 번째 선택된 모델 (단일 선택용)
-  const selectedModelId = selectedModelIds.length === 1 ? selectedModelIds[0] : null;
+  // 활성 선택 모델 (가장 최근에 선택된 모델)
+  const selectedModelId = selectedModelIds.length > 0 ? selectedModelIds[selectedModelIds.length - 1] : null;
   const selectedModel = selectedModelId ? sceneModels.find(m => m.id === selectedModelId) : null;
 
   // 추천 에셋 목록 - Three.js 예제에서 사용하는 실제 GLB 파일 URL 사용
@@ -1488,6 +1494,14 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           f.id === fileId ? { ...f, partId, isRegistered: true, isPending: false } : f
         ));
 
+        // 성공 시 로컬 썸네일 맵에 추가 (추천 파츠에서도 썸네일이 바로 뜨도록)
+        if (currentUploadData.previewUrl) {
+          setLocalThumbnailMap(prev => ({
+            ...prev,
+            [partId]: currentUploadData.previewUrl!
+          }));
+        }
+
         setSceneModels(prev => prev.map(m =>
           m.id === fileId ? { ...m, partId, partType: currentUploadData.type } : m
         ));
@@ -1617,7 +1631,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           partType: dragData.partType || 'OBJECT',
           modelUrl: dragData.modelUrl,
           name: dragData.name || dragData.prompt || "3D 모델",
-          position: { x: centerX, y: centerY, z: centerZ },
+          position: dragData.partType === 'BACKGROUND' ? { x: 0, y: 0, z: 0 } : { x: centerX, y: centerY, z: centerZ },
           rotation: { x: 0, y: 0, z: 0 },
           scale: 1,
           visible: true,
@@ -1639,7 +1653,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
               partType: dragData.partType || 'OBJECT',
               modelUrl: fileUrl,
               name: uploadedFile.file.name,
-              position: { x: centerX, y: centerY, z: centerZ },
+              position: dragData.partType === 'BACKGROUND' ? { x: 0, y: 0, z: 0 } : { x: centerX, y: centerY, z: centerZ },
               rotation: { x: 0, y: 0, z: 0 },
               scale: 1,
               visible: true,
@@ -1667,7 +1681,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
           partType: dragData.partType || 'OBJECT',
           modelUrl: dragData.modelUrl,
           name: dragData.name || "추천 에셋",
-          position: { x: centerX, y: centerY, z: centerZ },
+          position: dragData.partType === 'BACKGROUND' ? { x: 0, y: 0, z: 0 } : { x: centerX, y: centerY, z: centerZ },
           rotation: { x: 0, y: 0, z: 0 },
           scale: 1,
           visible: true,
@@ -2656,7 +2670,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                   {libraryParts
                     .slice((partsSectionPage - 1) * partsPerPage, partsSectionPage * partsPerPage)
                     .map((part) => {
-                      const imageUrl = part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
+                      const imageUrl = localThumbnailMap[part.id] || part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
 
                       return (
                         <div
@@ -2667,7 +2681,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                             partType: part.type,
                             modelUrl: part.modelFileUrl,
                             name: part.name,
-                            thumbnail: part.thumbnailUrl,
+                            thumbnail: localThumbnailMap[part.id] || part.thumbnailUrl,
                             category: part.category,
                           })}
                           className="cursor-grab active:cursor-grabbing"
@@ -2796,7 +2810,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                     {paginatedParts.map((part) => {
-                      const imageUrl = part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
+                      const imageUrl = localThumbnailMap[part.id] || part.thumbnailUrl || `https://via.placeholder.com/400x300/1a1a1a/ffffff?text=${encodeURIComponent(part.name)}`;
 
                       return (
                         <div
@@ -2808,7 +2822,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                             partType: part.type,
                             modelUrl: part.modelFileUrl, // fetchLibraryParts에서 이미 정문화됨
                             name: part.name,
-                            thumbnail: part.thumbnailUrl,
+                            thumbnail: localThumbnailMap[part.id] || part.thumbnailUrl,
                             category: part.category,
                           })}
                         >
@@ -2828,7 +2842,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
                                   partType: part.type,
                                   modelUrl: modelUrl,
                                   name: part.name,
-                                  position: { x: offset, y: 0, z: offset },
+                                  position: part.type === 'BACKGROUND' ? { x: 0, y: 0, z: 0 } : { x: offset, y: 0, z: offset },
                                   rotation: { x: 0, y: 0, z: 0 },
                                   scale: 1,
                                   visible: true,

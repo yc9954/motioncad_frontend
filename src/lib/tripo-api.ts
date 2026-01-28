@@ -64,9 +64,9 @@ export async function generate3DModel(
 
   try {
     // Vite 프록시를 통해 API 호출 (CORS 문제 해결)
-    // 프록시 설정: /api/tripo -> https://api.tripo3d.ai
+    // 프록시 설정: /tripo-api -> https://api.tripo3d.ai
     // 엔드포인트: POST https://api.tripo3d.ai/v2/openapi/task
-    const response = await fetch("/api/tripo/v2/openapi/task", {
+    const response = await fetch("/tripo-api/v2/openapi/task", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -89,8 +89,8 @@ export async function generate3DModel(
     // Tripo AI API 응답 구조: { code: 0, data: { task_id: "..." } }
     if (data.code !== 0) {
       throw new Error(
-        data.message || 
-        data.suggestion || 
+        data.message ||
+        data.suggestion ||
         `API 요청 실패: code ${data.code}`
       );
     }
@@ -129,7 +129,7 @@ export async function checkTaskStatus(
   try {
     // Vite 프록시를 통해 API 호출
     // Task 상태 확인 엔드포인트 (문서 확인 필요)
-    const response = await fetch(`/api/tripo/v2/openapi/task/${taskId}`, {
+    const response = await fetch(`/tripo-api/v2/openapi/task/${taskId}`, {
       method: "GET",
       headers: {
         "Authorization": authHeader,
@@ -154,17 +154,17 @@ export async function checkTaskStatus(
     // Tripo AI API 응답 구조 확인
     if (data.code !== 0) {
       throw new Error(
-        data.message || 
-        data.suggestion || 
+        data.message ||
+        data.suggestion ||
         `상태 확인 실패: code ${data.code}`
       );
     }
 
     // 모델 URL 우선순위: model > pbr_model > base_model
-    const modelUrl = 
-      data.data?.output?.model || 
-      data.data?.output?.pbr_model || 
-      data.data?.output?.base_model || 
+    const modelUrl =
+      data.data?.output?.model ||
+      data.data?.output?.pbr_model ||
+      data.data?.output?.base_model ||
       data.model_url;
 
     // 응답을 일관된 형식으로 변환
@@ -175,7 +175,7 @@ export async function checkTaskStatus(
       model_url: modelUrl, // output에서 모델 URL 가져오기 (우선순위: model > pbr_model > base_model)
       data: data.data, // 전체 data 객체 보존 (progress 등 포함)
     };
-    
+
     return result;
   } catch (error) {
     if (error instanceof Error) {
@@ -205,7 +205,7 @@ export async function getModelDownloadUrl(
 
   // Task 상태 확인을 통해 모델 URL 가져오기
   const taskStatus = await checkTaskStatus(taskId, apiKey);
-  
+
   if (taskStatus.model_url) {
     return taskStatus.model_url;
   }

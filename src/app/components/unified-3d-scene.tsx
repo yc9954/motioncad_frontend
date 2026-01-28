@@ -70,8 +70,9 @@ export function Unified3DScene({
   const lastCheckedFileIdRef = useRef<string | null>(null);
   const lastLogTimeRef = useRef<{ [key: string]: number }>({});
   const lastToastTimeRef = useRef<{ [key: string]: number }>({});
-  // transferMode를 ref에 저장하여 항상 최신 값 참조
+  // transferMode 및 selectedModelId를 ref에 저장하여 항상 최신 값 참조
   const transferModeRef = useRef<'send' | 'receive'>(transferMode);
+  const selectedModelIdRef = useRef<string | null | undefined>(selectedModelId);
 
   // 콜백을 ref에 저장하여 항상 최신 값 참조
   const callbacksRef = useRef({
@@ -91,6 +92,11 @@ export function Unified3DScene({
     };
     transferModeRef.current = transferMode;
   }, [onModelClick, onModelDrag, onModelRotate, onModelScale, transferMode]);
+
+  // selectedModelId 업데이트 시 ref도 동기화
+  useEffect(() => {
+    selectedModelIdRef.current = selectedModelId;
+  }, [selectedModelId]);
 
   // Load Three.js and all required controls from CDN
   useEffect(() => {
@@ -328,8 +334,9 @@ export function Unified3DScene({
       }
 
       // Apply gesture-controlled transforms with smoothing
-      if (targetPositionRef.current && selectedModelId) {
-        const modelGroup = modelsRef.current.get(selectedModelId);
+      const activeModelId = selectedModelIdRef.current;
+      if (targetPositionRef.current && activeModelId) {
+        const modelGroup = modelsRef.current.get(activeModelId);
         if (modelGroup) {
           const currentPos = modelGroup.position;
           const targetPos = targetPositionRef.current;
@@ -349,7 +356,7 @@ export function Unified3DScene({
           }
 
           if (callbacksRef.current.onModelDrag) {
-            callbacksRef.current.onModelDrag(selectedModelId, {
+            callbacksRef.current.onModelDrag(activeModelId, {
               x: currentPos.x,
               y: currentPos.y,
               z: currentPos.z,
@@ -358,8 +365,8 @@ export function Unified3DScene({
         }
       }
 
-      if (targetRotationRef.current && selectedModelId) {
-        const modelGroup = modelsRef.current.get(selectedModelId);
+      if (targetRotationRef.current && activeModelId) {
+        const modelGroup = modelsRef.current.get(activeModelId);
         if (modelGroup) {
           const targetEuler = new THREE.Euler(
             targetRotationRef.current.x,
@@ -370,7 +377,7 @@ export function Unified3DScene({
           const targetQuaternion = new THREE.Quaternion().setFromEuler(targetEuler);
           modelGroup.quaternion.slerp(targetQuaternion, damping);
           if (callbacksRef.current.onModelRotate) {
-            callbacksRef.current.onModelRotate(selectedModelId, {
+            callbacksRef.current.onModelRotate(activeModelId, {
               x: modelGroup.rotation.x,
               y: modelGroup.rotation.y,
               z: modelGroup.rotation.z,
@@ -381,8 +388,8 @@ export function Unified3DScene({
 
       // targetScaleRef.current가 null이 아닐 때만 스케일링 적용 (더블 핀치일 때만)
       // null이면 현재 스케일 유지 (싱글 핀치일 때 스케일 변경 방지)
-      if (targetScaleRef.current !== null && selectedModelId) {
-        const modelGroup = modelsRef.current.get(selectedModelId);
+      if (targetScaleRef.current !== null && activeModelId) {
+        const modelGroup = modelsRef.current.get(activeModelId);
         if (modelGroup) {
           const currentScale = modelGroup.scale.x;
           const smoothScale = THREE.MathUtils.lerp(
@@ -392,7 +399,7 @@ export function Unified3DScene({
           );
           modelGroup.scale.set(smoothScale, smoothScale, smoothScale);
           if (callbacksRef.current.onModelScale) {
-            callbacksRef.current.onModelScale(selectedModelId, smoothScale);
+            callbacksRef.current.onModelScale(activeModelId, smoothScale);
           }
         }
       }
@@ -426,7 +433,7 @@ export function Unified3DScene({
           // 현재 카메라가 평면의 어느 쪽에 있는지 확인 (Z축 기준)
           const zOffset = currentCameraPos.z - targetPosition.z;
           const zDirection = zOffset >= 0 ? 1 : -1; // 양수면 위쪽, 음수면 아래쪽
-          
+
           cameraPosition = new THREE.Vector3(
             targetPosition.x,
             targetPosition.y,
@@ -442,7 +449,7 @@ export function Unified3DScene({
           // 현재 카메라가 평면의 어느 쪽에 있는지 확인 (Y축 기준)
           const yOffset = currentCameraPos.y - targetPosition.y;
           const yDirection = yOffset >= 0 ? 1 : -1; // 양수면 위쪽, 음수면 아래쪽
-          
+
           cameraPosition = new THREE.Vector3(
             targetPosition.x,
             targetPosition.y + yDirection * distance,
@@ -458,7 +465,7 @@ export function Unified3DScene({
           // 현재 카메라가 평면의 어느 쪽에 있는지 확인 (X축 기준)
           const xOffset = currentCameraPos.x - targetPosition.x;
           const xDirection = xOffset >= 0 ? 1 : -1; // 양수면 오른쪽, 음수면 왼쪽
-          
+
           cameraPosition = new THREE.Vector3(
             targetPosition.x + xDirection * distance,
             targetPosition.y,
@@ -514,25 +521,25 @@ export function Unified3DScene({
       if (transformControlsRef.current && transformControlsRef.current.object) {
         const transformControls = transformControlsRef.current;
         const planeObjects: any[] = [];
-        
+
         // TransformControls의 모든 자식 객체를 순회하며 평면 찾기
         transformControls.traverse((child: any) => {
           if (child.isMesh) {
             // 평면 메시는 보통 특정 색상을 가지고 있음
             const material = child.material;
             if (material) {
-              const color = material.color?.getHex ? material.color.getHex() : 
-                           (material.color ? material.color : null);
-              
+              const color = material.color?.getHex ? material.color.getHex() :
+                (material.color ? material.color : null);
+
               // 노란색 (0xffff00), 시안 (0x00ffff), 마젠타 (0xff00ff) 평면 찾기
               if (color === 0xffff00 || color === 0x00ffff || color === 0xff00ff) {
                 planeObjects.push(child);
               }
             }
-            
+
             // 이름으로도 확인
             if (child.name === 'XY' || child.name === 'XZ' || child.name === 'YZ' ||
-                child.name?.includes('plane') || child.name?.includes('Plane')) {
+              child.name?.includes('plane') || child.name?.includes('Plane')) {
               planeObjects.push(child);
             }
           }
@@ -543,7 +550,7 @@ export function Unified3DScene({
           if (planeIntersects.length > 0) {
             const clickedPlane = planeIntersects[0].object;
             let planeName: string | null = null;
-            
+
             // 이름으로 판단
             if (clickedPlane.name === 'XY' || clickedPlane.name === 'XZ' || clickedPlane.name === 'YZ') {
               planeName = clickedPlane.name;
@@ -551,9 +558,9 @@ export function Unified3DScene({
               // 색상으로 판단
               const material = clickedPlane.material;
               if (material) {
-                const color = material.color?.getHex ? material.color.getHex() : 
-                             (material.color ? material.color : null);
-                
+                const color = material.color?.getHex ? material.color.getHex() :
+                  (material.color ? material.color : null);
+
                 if (color === 0xffff00) planeName = 'XY'; // 노란색
                 else if (color === 0x00ffff) planeName = 'XZ'; // 시안
                 else if (color === 0xff00ff) planeName = 'YZ'; // 마젠타
@@ -946,7 +953,7 @@ export function Unified3DScene({
             return;
           }
 
-          if (!selectedModelId) {
+          if (!selectedModelIdRef.current) {
             // No model selected, skip processing
             return;
           }
@@ -992,7 +999,7 @@ export function Unified3DScene({
           handleGrabGesture(grabHand, openPalmHand);
 
           // selectedModelId가 없으면 다른 제스처는 처리하지 않음
-          if (!selectedModelId) {
+          if (!selectedModelIdRef.current) {
             return;
           }
 
@@ -1027,9 +1034,10 @@ export function Unified3DScene({
           if (pinchingHands.length === 2 && worldPinchingHands.length === 2) {
             // Double Pinch - Scaling (최우선)
             // 현재 선택된 모델의 스케일 가져오기
+            const activeIdForPinch = selectedModelIdRef.current;
             let currentObjectScale: number | undefined;
-            if (selectedModelId) {
-              const modelGroup = modelsRef.current.get(selectedModelId);
+            if (activeIdForPinch) {
+              const modelGroup = modelsRef.current.get(activeIdForPinch);
               if (modelGroup) {
                 currentObjectScale = modelGroup.scale.x;
               }
@@ -1049,9 +1057,10 @@ export function Unified3DScene({
             // 싱글 핀치일 때는 스케일을 명확히 null로 설정 (의도치 않은 스케일링 방지)
             targetScaleRef.current = null;
             // 현재 선택된 모델의 위치 가져오기
+            const activeIdForMove = selectedModelIdRef.current;
             let currentObjectPosition: { x: number; y: number; z: number } | undefined;
-            if (selectedModelId) {
-              const modelGroup = modelsRef.current.get(selectedModelId);
+            if (activeIdForMove) {
+              const modelGroup = modelsRef.current.get(activeIdForMove);
               if (modelGroup) {
                 currentObjectPosition = {
                   x: modelGroup.position.x,
@@ -1586,7 +1595,7 @@ export function Unified3DScene({
     return () => {
       if (cleanup) cleanup();
     };
-  }, [webcamEnabled, threeLoaded, selectedModelId]);
+  }, [webcamEnabled, threeLoaded]);
 
   // Highlight selected model
   useEffect(() => {

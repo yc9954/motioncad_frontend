@@ -71,7 +71,7 @@ const Gallery4 = ({
 
     const autoplayInterval = setInterval(() => {
       carouselApi.scrollNext();
-      
+
       // 마지막 세트의 끝에 도달하면 첫 번째 세트의 시작으로 부드럽게 이동
       const currentIndex = carouselApi.selectedScrollSnap();
       if (currentIndex >= items.length * 2) {
@@ -136,27 +136,27 @@ const Gallery4 = ({
           }}
           className="w-full"
         >
-          <CarouselContent className="-ml-0 2xl:ml-[max(8rem,calc(50vw-700px))] 2xl:mr-[max(0rem,calc(50vw-700px))]">
+          <CarouselContent className="-ml-6 2xl:ml-[max(8rem,calc(50vw-700px))] 2xl:mr-[max(0rem,calc(50vw-700px))]">
             {duplicatedItems.map((item, index) => (
               <CarouselItem
                 key={`${item.id}-${index}`}
-                className="max-w-[280px] pl-[16px] lg:max-w-[300px] basis-[280px] lg:basis-[300px]"
+                className="max-w-[300px] pl-[24px] lg:max-w-[320px] basis-[300px] lg:basis-[320px]"
               >
                 <a href={item.href} className="group rounded-xl">
                   <div className="group relative h-full min-h-[20rem] max-w-full overflow-hidden rounded-xl md:aspect-[5/4] lg:aspect-[16/9] border border-border bg-card shadow-lg cursor-pointer transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-2">
                     {/* Fallback gradient background */}
                     <div className="absolute inset-0 h-full w-full bg-gradient-to-br from-gray-400 via-gray-500 to-gray-600 z-0" />
-                    
+
                     {/* Background Image with Zoom Effect on Hover */}
                     <img
                       src={item.image}
                       alt={item.title}
                       className="absolute h-full w-full object-cover object-center transition-transform duration-500 ease-in-out group-hover:scale-110 z-10"
                     />
-                    
+
                     {/* Gradient Overlay for Text Readability - 하단 그라데이션 강화 */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent z-20"></div>
-                    
+
                     {/* Content Container */}
                     <div className="relative flex h-full flex-col p-4 text-card-foreground z-30 overflow-hidden">
                       {/* 헤더와 설명글을 함께 감싸서 호버 시 올라가도록 */}
@@ -195,9 +195,8 @@ const Gallery4 = ({
             return (
               <button
                 key={index}
-                className={`h-2 w-2 rounded-full transition-colors ${
-                  normalizedIndex === index ? "bg-primary" : "bg-primary/20"
-                }`}
+                className={`h-2 w-2 rounded-full transition-colors ${normalizedIndex === index ? "bg-primary" : "bg-primary/20"
+                  }`}
                 onClick={() => carouselApi?.scrollTo(index)}
                 aria-label={`Go to slide ${index + 1}`}
               />

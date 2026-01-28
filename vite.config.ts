@@ -18,10 +18,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api/tripo': {
+      '/tripo-api': {
         target: 'https://api.tripo3d.ai',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/tripo/, ''),
+        rewrite: (path) => path.replace(/^\/tripo-api/, ''),
         secure: true,
         configure: (proxy, _options) => {
           proxy.on('proxyReq', (proxyReq, req, res) => {

@@ -243,10 +243,9 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
       setIsLoadingParts(true);
       try {
         // OBJECT 타입 파츠 가져오기
-        const objectParts = await partApi.getParts({ 
-          type: 'OBJECT', 
+        const objectParts = await partApi.getParts({
+          type: 'OBJECT',
           sort: 'latest',
-          count: 12 
         });
         setParts(objectParts);
       } catch (error) {
@@ -658,7 +657,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
               "Learn how Svelte shifts work from the browser to the build step, creating highly optimized vanilla JavaScript that results in faster runtime performance.",
             href: "https://svelte.dev",
             image:
-              "https://images.unsplash.com/photo-1551650975-87deedd944c3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+              "https://images.unsplash.com/photo-1618477247222-ac40d2479e19?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxNzd8fHx8fHwyfHwxNjkzNjM0NDc0fA&q=80&w=1080",
           },
           {
             id: "angular",
@@ -667,7 +666,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
               "Explore how Angular provides a comprehensive framework for building large-scale applications with TypeScript, dependency injection, and a powerful CLI.",
             href: "https://angular.io",
             image:
-              "https://images.unsplash.com/photo-1551650975-87deedd944c3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+              "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w2NDI3NzN8MHwxfGFsbHwxNzd8fHx8fHwyfHwxNjkzNjM0NDc0fA&q=80&w=1080",
           },
         ];
 
@@ -675,7 +674,7 @@ export function DashboardPage({ onNavigateToBuilder, onNavigateToLanding }: Dash
         const allGalleryItems = [...galleryItems, ...mockItems.slice(0, Math.max(0, 12 - galleryItems.length))];
 
         const galleryData: Gallery4Props = {
-          title: "Projects",
+          title: "Issues",
           description:
             "Discover how leading companies and developers are leveraging modern web technologies to build exceptional digital experiences. These case studies showcase real-world applications and success stories.",
           items: allGalleryItems,
