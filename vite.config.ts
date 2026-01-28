@@ -82,7 +82,7 @@ export default defineConfig({
       },
       // OAuth2 프록시 (Spring Security OAuth2는 /oauth2 경로 사용)
       '/api/oauth2': {
-        target: 'https://86df24586530.ngrok-free.app',
+        target: 'https://aee5a6d3e5e3.ngrok-free.app',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api\/oauth2/, '/oauth2'),
@@ -109,7 +109,7 @@ export default defineConfig({
                 return;
               }
               // 백엔드 리다이렉트인 경우 프록시 경로로 변환
-              else if (location && location.includes('86df24586530.ngrok-free.app')) {
+              else if (location && location.includes('aee5a6d3e5e3.ngrok-free.app')) {
                 // /login/oauth2/code/google 같은 경로는 프록시 경로로 변환
                 const url = new URL(location);
                 const newLocation = url.pathname + url.search;
@@ -136,7 +136,7 @@ export default defineConfig({
       },
       // OAuth2 콜백 프록시 (/login/oauth2/code/google 경로 처리)
       '/login/oauth2': {
-        target: 'https://86df24586530.ngrok-free.app',
+        target: 'https://aee5a6d3e5e3.ngrok-free.app',
         changeOrigin: true,
         secure: false,
         configure: (proxy, _options) => {
@@ -152,7 +152,7 @@ export default defineConfig({
             // 리다이렉트 응답 처리
             if ([301, 302, 307, 308].includes(proxyRes.statusCode || 0)) {
               const location = proxyRes.headers['location'];
-              if (location && location.includes('86df24586530.ngrok-free.app')) {
+              if (location && location.includes('aee5a6d3e5e3.ngrok-free.app')) {
                 const url = new URL(location);
                 const newLocation = url.pathname + url.search;
                 if (!res.headersSent) {
