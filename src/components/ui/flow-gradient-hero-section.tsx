@@ -418,12 +418,6 @@ export default function LiquidGradient({
           )}
         </button>
       )}
-
-      <footer className={`footer-main ${isDarkMode ? 'dark' : ''}`}>
-        <a href="https://haikkashiyani.kesug.com/?i=1" target="_blank" rel="noopener noreferrer">
-          Made By Donggeun Lee, Yuchan Lee
-        </a>
-      </footer>
     </div>
   );
 }

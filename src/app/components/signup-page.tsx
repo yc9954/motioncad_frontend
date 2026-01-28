@@ -11,7 +11,7 @@ import { FaGoogle } from 'react-icons/fa';
 const getGoogleOAuthUrl = (): string => {
     // OAuth는 세션 유지를 위해 항상 직접 백엔드 URL 사용 (프록시 사용 안 함)
     // 프록시를 사용하면 세션이 유지되지 않아 authorization_request_not_found 에러 발생
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://0590d2abeade.ngrok-free.app';
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://86df24586530.ngrok-free.app';
     return `${apiBaseUrl}/oauth2/authorization/google`;
 };
 

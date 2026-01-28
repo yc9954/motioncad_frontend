@@ -259,7 +259,7 @@ export function PromptingTab({ initialModelUrl, initialModelName }: PromptingTab
             // modelFileUrl이 상대 경로인 경우 API_BASE_URL 추가
             let glbUrl = part.modelFileUrl;
             if (glbUrl && !glbUrl.startsWith('http')) {
-              const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://0590d2abeade.ngrok-free.app';
+              const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://86df24586530.ngrok-free.app';
               glbUrl = `${apiBaseUrl}${glbUrl.startsWith('/') ? '' : '/'}${glbUrl}`;
             }
 
