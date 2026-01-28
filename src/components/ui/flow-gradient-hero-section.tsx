@@ -387,17 +387,21 @@ export default function LiquidGradient({
         style={{ opacity: showCursor ? 1 : 0 }} 
       />
       
-      <h1 className={`title-main ${isDarkMode ? 'dark' : ''}`}>
-        {title}
-      </h1>
+      {!!title && (
+        <h1 className={`title-main ${isDarkMode ? 'dark' : ''}`}>
+          {title}
+        </h1>
+      )}
 
       {/* CTA Button */}
-      <button 
-        className={`cta-btn ${isDarkMode ? 'dark' : ''}`}
-        onClick={onCtaClick}
-      >
-        {ctaText}
-      </button>
+      {!!ctaText && (
+        <button 
+          className={`cta-btn ${isDarkMode ? 'dark' : ''}`}
+          onClick={onCtaClick}
+        >
+          {ctaText}
+        </button>
+      )}
 
       {/* Pause/Play Button */}
       {showPauseButton && (
