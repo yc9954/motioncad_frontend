@@ -3,7 +3,7 @@
 // 개발 환경에서는 Vite 프록시를 사용하여 CORS 문제 해결
 const API_BASE_URL = import.meta.env.DEV
   ? '' // 개발 환경: Vite 프록시 사용 (/api로 시작)
-  : (import.meta.env.VITE_API_BASE_URL || 'https://f76640308ac2.ngrok-free.app');
+  : (import.meta.env.VITE_API_BASE_URL || 'https://0590d2abeade.ngrok-free.app');
 
 // Types
 export interface SignupRequest {
