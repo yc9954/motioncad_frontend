@@ -1,9 +1,13 @@
 // Backend API Client
 // Base URL from OpenAPI spec
 // 개발 환경에서는 Vite 프록시를 사용하여 CORS 문제 해결
-const API_BASE_URL = import.meta.env.DEV
+export const API_BASE_URL = import.meta.env.DEV
   ? '' // 개발 환경: Vite 프록시 사용 (/api로 시작)
   : (import.meta.env.VITE_API_BASE_URL || 'https://f76640308ac2.ngrok-free.app');
+
+export const getOAuth2Url = (provider: string) => {
+  return `${API_BASE_URL}/oauth2/authorization/${provider}`;
+};
 
 // Types
 export interface SignupRequest {
@@ -514,7 +518,7 @@ export const transferApi = {
     try {
       console.log('[Transfer] 업로드 시작, 파일 크기:', glbFile.size, 'bytes');
       console.log('[Transfer] 업로드 URL:', `${API_BASE_URL}/api/transfer/upload`);
-      
+
       const response = await fetch(`${API_BASE_URL}/api/transfer/upload`, {
         method: 'POST',
         headers,
@@ -537,12 +541,12 @@ export const transferApi = {
         } catch (e) {
           errorText = `HTTP ${response.status} ${response.statusText}`;
         }
-        
+
         // 503 오류는 서버/ngrok 문제
         if (response.status === 503) {
           throw new Error(`서버 연결 오류 (503): 서버가 응답하지 않습니다. ngrok 연결을 확인하거나 잠시 후 다시 시도하세요.`);
         }
-        
+
         console.error('[Transfer] 업로드 에러:', response.status, errorText);
         throw new Error(`Upload Error: ${response.status} - ${errorText.substring(0, 200)}`);
       }
@@ -552,12 +556,12 @@ export const transferApi = {
       return result;
     } catch (error) {
       console.error('[Transfer] uploadGLB 네트워크 에러:', error);
-      
+
       // 네트워크 에러 처리
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
         throw new Error('네트워크 연결 실패: 서버에 연결할 수 없습니다. ngrok 연결을 확인하거나 서버가 실행 중인지 확인하세요.');
       }
-      
+
       if (error instanceof Error) {
         throw error;
       }
@@ -579,7 +583,7 @@ export const transferApi = {
 
     try {
       console.log('[Transfer] 다운로드 시작, fileId:', fileId);
-      
+
       // 리다이렉트를 따라가도록 fetch 옵션 설정
       const response = await fetch(`${API_BASE_URL}/api/transfer/download/${fileId}`, {
         method: 'GET',
@@ -594,7 +598,7 @@ export const transferApi = {
         if (response.status === 404) {
           throw new Error(`File not found: ${fileId}`);
         }
-        
+
         // 에러 응답이 JSON일 수도 있으니 시도
         let errorText = '';
         try {
@@ -608,7 +612,7 @@ export const transferApi = {
         } catch (e) {
           errorText = `HTTP ${response.status} ${response.statusText}`;
         }
-        
+
         console.error('[Transfer] 다운로드 에러:', response.status, errorText);
         throw new Error(`Download Error: ${response.status} - ${errorText}`);
       }
@@ -616,11 +620,11 @@ export const transferApi = {
       // OpenAPI 스펙에 따르면 바이너리 데이터 (byte array)를 반환
       const blob = await response.blob();
       console.log('[Transfer] 다운로드 완료, blob 크기:', blob.size, 'bytes');
-      
+
       if (blob.size === 0) {
         throw new Error('Downloaded file is empty');
       }
-      
+
       return blob;
     } catch (error) {
       console.error('[Transfer] downloadGLB 네트워크 에러:', error);
@@ -653,12 +657,12 @@ export const transferApi = {
       if ([301, 302, 307, 308].includes(response.status)) {
         const location = response.headers.get('location');
         console.warn('[Transfer] 리다이렉트 감지:', location);
-        
+
         // OAuth 로그인 페이지로 리다이렉트된 경우
         if (location && (location.includes('oauth2') || location.includes('accounts.google.com'))) {
           throw new Error('인증이 필요합니다. 로그인 후 다시 시도해주세요.');
         }
-        
+
         // 다른 리다이렉트인 경우
         throw new Error(`Unexpected redirect: ${location}`);
       }
@@ -688,29 +692,29 @@ export const transferApi = {
 
       const data = await response.json();
       console.log('[Transfer] getLatestFileId 응답:', data);
-      
+
       // OpenAPI 스펙에 따르면 LatestFileResponse는 { fileId: string } 형식
       if (data && typeof data.fileId === 'string') {
         return data.fileId;
       }
-      
+
       // 응답 형식이 다를 경우를 대비한 fallback
       if (data && data.fileId === null || data.fileId === undefined) {
         console.log('[Transfer] fileId가 null/undefined');
         return null;
       }
-      
+
       console.warn('[Transfer] 예상치 못한 응답 구조:', data);
       return null;
     } catch (error) {
       console.error('[Transfer] getLatestFileId 네트워크 에러:', error);
-      
+
       // CORS 에러나 네트워크 에러 처리
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
         // 리다이렉트로 인한 CORS 에러일 수 있음
         throw new Error('서버 연결 실패 또는 인증이 필요합니다. 로그인 상태를 확인해주세요.');
       }
-      
+
       if (error instanceof Error) {
         throw error;
       }

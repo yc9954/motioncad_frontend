@@ -3,7 +3,7 @@ import { GlassCard, GlassCardHeader, GlassCardTitle, GlassCardContent, GlassCard
 import { Button } from '@/app/components/ui/button'
 import { Label } from '@/app/components/ui/label'
 import { Input } from '@/app/components/ui/input'
-import { authApi } from "@/lib/api";
+import { authApi, getOAuth2Url } from "@/lib/api";
 import { toast } from "sonner";
 import { FaGoogle } from 'react-icons/fa';
 
@@ -46,7 +46,7 @@ export function LoginPage({ onLoginSuccess, onNavigateToSignup }: LoginPageProps
   };
 
   const handleGoogleLogin = () => {
-    window.location.href = "http://localhost:8080/oauth2/authorization/google";
+    window.location.href = getOAuth2Url("google");
   };
 
   return (

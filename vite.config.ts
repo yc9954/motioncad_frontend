@@ -80,12 +80,12 @@ export default defineConfig({
           });
         },
       },
-      // 백엔드 API 프록시 추가
+      // 백엔드 API 프록시 추가 (OAuth2 포함)
       '/api': {
         target: 'http://ec2-54-180-23-126.ap-northeast-2.compute.amazonaws.com:8080',
         changeOrigin: true,
         secure: false,
-        timeout: 60000, // 60초 타임아웃 (대용량 파일 업로드용)
+        timeout: 60000,
         configure: (proxy, _options) => {
           proxy.on('proxyReq', (proxyReq, req, res) => {
             console.log('[Backend Proxy] Request:', req.method, req.url);
@@ -132,6 +132,11 @@ export default defineConfig({
             }
           });
         },
+      },
+      '/oauth2': {
+        target: 'http://ec2-54-180-23-126.ap-northeast-2.compute.amazonaws.com:8080',
+        changeOrigin: true,
+        secure: false,
       },
       // S3 버킷 프록시 (CORS 문제 해결용)
       '/s3-proxy': {
