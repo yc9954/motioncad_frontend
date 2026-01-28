@@ -409,7 +409,94 @@ export function Unified3DScene({
     };
     window.addEventListener('resize', handleResize);
 
-    // Mouse click handler for model selection
+    // 카메라를 평면에 맞게 이동시키는 함수
+    const alignCameraToPlane = (planeName: string, targetObject: any) => {
+      if (!cameraRef.current || !orbitControls || !targetObject) return;
+
+      const targetPosition = targetObject.position || new THREE.Vector3(0, 0, 0);
+      const currentCameraPos = cameraRef.current.position;
+      const distance = 15; // 카메라와 타겟 사이의 거리
+
+      let cameraPosition: THREE.Vector3;
+      let lookAtPosition: THREE.Vector3;
+
+      switch (planeName) {
+        case 'XY': // 노란색 평면 (Z축 방향)
+          // 현재 카메라가 평면의 어느 쪽에 있는지 확인 (Z축 기준)
+          const zOffset = currentCameraPos.z - targetPosition.z;
+          const zDirection = zOffset >= 0 ? 1 : -1; // 양수면 위쪽, 음수면 아래쪽
+          
+          cameraPosition = new THREE.Vector3(
+            targetPosition.x,
+            targetPosition.y,
+            targetPosition.z + zDirection * distance
+          );
+          lookAtPosition = new THREE.Vector3(
+            targetPosition.x,
+            targetPosition.y,
+            targetPosition.z
+          );
+          break;
+        case 'XZ': // 시안 평면 (Y축 방향)
+          // 현재 카메라가 평면의 어느 쪽에 있는지 확인 (Y축 기준)
+          const yOffset = currentCameraPos.y - targetPosition.y;
+          const yDirection = yOffset >= 0 ? 1 : -1; // 양수면 위쪽, 음수면 아래쪽
+          
+          cameraPosition = new THREE.Vector3(
+            targetPosition.x,
+            targetPosition.y + yDirection * distance,
+            targetPosition.z
+          );
+          lookAtPosition = new THREE.Vector3(
+            targetPosition.x,
+            targetPosition.y,
+            targetPosition.z
+          );
+          break;
+        case 'YZ': // 마젠타 평면 (X축 방향)
+          // 현재 카메라가 평면의 어느 쪽에 있는지 확인 (X축 기준)
+          const xOffset = currentCameraPos.x - targetPosition.x;
+          const xDirection = xOffset >= 0 ? 1 : -1; // 양수면 오른쪽, 음수면 왼쪽
+          
+          cameraPosition = new THREE.Vector3(
+            targetPosition.x + xDirection * distance,
+            targetPosition.y,
+            targetPosition.z
+          );
+          lookAtPosition = new THREE.Vector3(
+            targetPosition.x,
+            targetPosition.y,
+            targetPosition.z
+          );
+          break;
+        default:
+          return;
+      }
+
+      // 부드러운 카메라 이동을 위한 애니메이션
+      const startPosition = cameraRef.current.position.clone();
+      const startTarget = orbitControls.target.clone();
+      const duration = 600; // 0.6초
+      const startTime = Date.now();
+
+      const animateCamera = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const ease = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+
+        cameraRef.current.position.lerpVectors(startPosition, cameraPosition, ease);
+        orbitControls.target.lerpVectors(startTarget, lookAtPosition, ease);
+        orbitControls.update();
+
+        if (progress < 1) {
+          requestAnimationFrame(animateCamera);
+        }
+      };
+
+      animateCamera();
+    };
+
+    // Mouse click handler for model selection and plane alignment
     const handleClick = (event: MouseEvent) => {
       if (!containerRef.current || !raycasterRef.current || !cameraRef.current) return;
 
@@ -421,6 +508,66 @@ export function Unified3DScene({
       mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+
+      // TransformControls의 평면 확인
+      if (transformControlsRef.current && transformControlsRef.current.object) {
+        const transformControls = transformControlsRef.current;
+        const planeObjects: any[] = [];
+        
+        // TransformControls의 모든 자식 객체를 순회하며 평면 찾기
+        transformControls.traverse((child: any) => {
+          if (child.isMesh) {
+            // 평면 메시는 보통 특정 색상을 가지고 있음
+            const material = child.material;
+            if (material) {
+              const color = material.color?.getHex ? material.color.getHex() : 
+                           (material.color ? material.color : null);
+              
+              // 노란색 (0xffff00), 시안 (0x00ffff), 마젠타 (0xff00ff) 평면 찾기
+              if (color === 0xffff00 || color === 0x00ffff || color === 0xff00ff) {
+                planeObjects.push(child);
+              }
+            }
+            
+            // 이름으로도 확인
+            if (child.name === 'XY' || child.name === 'XZ' || child.name === 'YZ' ||
+                child.name?.includes('plane') || child.name?.includes('Plane')) {
+              planeObjects.push(child);
+            }
+          }
+        });
+
+        if (planeObjects.length > 0) {
+          const planeIntersects = raycasterRef.current.intersectObjects(planeObjects, true);
+          if (planeIntersects.length > 0) {
+            const clickedPlane = planeIntersects[0].object;
+            let planeName: string | null = null;
+            
+            // 이름으로 판단
+            if (clickedPlane.name === 'XY' || clickedPlane.name === 'XZ' || clickedPlane.name === 'YZ') {
+              planeName = clickedPlane.name;
+            } else {
+              // 색상으로 판단
+              const material = clickedPlane.material;
+              if (material) {
+                const color = material.color?.getHex ? material.color.getHex() : 
+                             (material.color ? material.color : null);
+                
+                if (color === 0xffff00) planeName = 'XY'; // 노란색
+                else if (color === 0x00ffff) planeName = 'XZ'; // 시안
+                else if (color === 0xff00ff) planeName = 'YZ'; // 마젠타
+              }
+            }
+
+            if (planeName) {
+              event.preventDefault();
+              event.stopPropagation();
+              alignCameraToPlane(planeName, transformControls.object);
+              return; // 평면 클릭 시 모델 선택은 무시
+            }
+          }
+        }
+      }
 
       // Get all model meshes (exclude ground and transform controls)
       const meshes: any[] = [];
