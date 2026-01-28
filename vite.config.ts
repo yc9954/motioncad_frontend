@@ -80,7 +80,98 @@ export default defineConfig({
           });
         },
       },
-      // 백엔드 API 프록시 추가 (OAuth2 포함)
+      // OAuth2 프록시 (Spring Security OAuth2는 /oauth2 경로 사용)
+      '/api/oauth2': {
+        target: 'https://0590d2abeade.ngrok-free.app',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api\/oauth2/, '/oauth2'),
+        configure: (proxy, _options) => {
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            // 헤더는 요청이 시작되기 전에만 설정 가능
+            if (!res.headersSent) {
+              console.log('[OAuth2 Proxy] Request:', req.method, req.url);
+              proxyReq.setHeader('ngrok-skip-browser-warning', 'true');
+            }
+          });
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            console.log('[OAuth2 Proxy] Response:', proxyRes.statusCode, req.url);
+
+            // 리다이렉트 응답 처리 (301, 302, 307, 308)
+            if ([301, 302, 307, 308].includes(proxyRes.statusCode || 0)) {
+              const location = proxyRes.headers['location'];
+              console.log('[OAuth2 Proxy] Redirect detected:', location);
+
+              // Google OAuth 리다이렉트인 경우 그대로 전달 (헤더 수정 불필요)
+              if (location && location.includes('accounts.google.com')) {
+                console.log('[OAuth2 Proxy] Google OAuth redirect, passing through');
+                // 리다이렉트 응답에서는 CORS 헤더를 설정하지 않음 (브라우저가 자동 처리)
+                return;
+              }
+              // 백엔드 리다이렉트인 경우 프록시 경로로 변환
+              else if (location && location.includes('0590d2abeade.ngrok-free.app')) {
+                // /login/oauth2/code/google 같은 경로는 프록시 경로로 변환
+                const url = new URL(location);
+                const newLocation = url.pathname + url.search;
+                // 헤더가 아직 전송되지 않았을 때만 수정
+                if (!res.headersSent) {
+                  proxyRes.headers['location'] = newLocation;
+                  console.log('[OAuth2 Proxy] Converted redirect to:', newLocation);
+                }
+              }
+            }
+
+            // 헤더가 아직 전송되지 않았을 때만 CORS 헤더 추가
+            if (!res.headersSent) {
+              proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+              proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
+              proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, ngrok-skip-browser-warning';
+              proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+            }
+          });
+          proxy.on('error', (err: Error & { code?: string }, req, res) => {
+            console.error('[OAuth2 Proxy] Error:', err.message, err.code);
+          });
+        },
+      },
+      // OAuth2 콜백 프록시 (/login/oauth2/code/google 경로 처리)
+      '/login/oauth2': {
+        target: 'https://0590d2abeade.ngrok-free.app',
+        changeOrigin: true,
+        secure: false,
+        configure: (proxy, _options) => {
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            if (!res.headersSent) {
+              console.log('[OAuth2 Callback Proxy] Request:', req.method, req.url);
+              proxyReq.setHeader('ngrok-skip-browser-warning', 'true');
+            }
+          });
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            console.log('[OAuth2 Callback Proxy] Response:', proxyRes.statusCode, req.url);
+
+            // 리다이렉트 응답 처리
+            if ([301, 302, 307, 308].includes(proxyRes.statusCode || 0)) {
+              const location = proxyRes.headers['location'];
+              if (location && location.includes('0590d2abeade.ngrok-free.app')) {
+                const url = new URL(location);
+                const newLocation = url.pathname + url.search;
+                if (!res.headersSent) {
+                  proxyRes.headers['location'] = newLocation;
+                  console.log('[OAuth2 Callback Proxy] Converted redirect to:', newLocation);
+                }
+              }
+            }
+
+            if (!res.headersSent) {
+              proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+              proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
+              proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, ngrok-skip-browser-warning';
+              proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+            }
+          });
+        },
+      },
+      // 백엔드 API 프록시 추가
       '/api': {
         target: 'http://ec2-54-180-23-126.ap-northeast-2.compute.amazonaws.com:8080',
         changeOrigin: true,
@@ -116,7 +207,7 @@ export default defineConfig({
             proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
           });
 
-          proxy.on('error', (err, req, res) => {
+          proxy.on('error', (err: Error & { code?: string }, req, res) => {
             console.error('[Backend Proxy] Error:', err.message, err.code);
             console.error('[Backend Proxy] Request URL:', req.url);
             if (res && !res.headersSent) {

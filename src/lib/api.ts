@@ -3,7 +3,7 @@
 // 개발 환경에서는 Vite 프록시를 사용하여 CORS 문제 해결
 export const API_BASE_URL = import.meta.env.DEV
   ? '' // 개발 환경: Vite 프록시 사용 (/api로 시작)
-  : (import.meta.env.VITE_API_BASE_URL || 'https://f76640308ac2.ngrok-free.app');
+  : (import.meta.env.VITE_API_BASE_URL || 'https://0590d2abeade.ngrok-free.app');
 
 export const getOAuth2Url = (provider: string) => {
   return `${API_BASE_URL}/oauth2/authorization/${provider}`;
@@ -338,16 +338,36 @@ export const projectApi = {
     return apiCall<ProjectResponse>(`/api/projects/${projectId}`);
   },
 
+  getMyProjects: async (params?: {
+    sort?: string;
+    timeRange?: string;
+    userId?: number;
+  }): Promise<ProjectResponse[]> => {
+    const queryParams = new URLSearchParams();
+    if (params?.sort) queryParams.append('sort', params.sort);
+    if (params?.timeRange) queryParams.append('timeRange', params.timeRange);
+    if (params?.userId) queryParams.append('userId', params.userId.toString());
+
+    const queryString = queryParams.toString();
+    return apiCall<ProjectResponse[]>(`/api/projects/me${queryString ? `?${queryString}` : ''}`);
+  },
+
   saveProject: async (
     userId: number,
     project: ProjectRequest,
     projectId?: number
   ): Promise<number> => {
+    console.log('[saveProject] Received userId:', userId);
+    console.log('[saveProject] projectId:', projectId);
+    
     const queryParams = new URLSearchParams();
     queryParams.append('userId', userId.toString());
     if (projectId) queryParams.append('projectId', projectId.toString());
 
-    return apiCall<number>(`/api/projects?${queryParams.toString()}`, {
+    const url = `/api/projects?${queryParams.toString()}`;
+    console.log('[saveProject] Request URL:', url);
+
+    return apiCall<number>(url, {
       method: 'POST',
       body: JSON.stringify(project),
     });
@@ -411,6 +431,10 @@ export const partApi = {
       body: formData,
       onProgress
     });
+  },
+
+  getPart: async (partId: number): Promise<PartResponse> => {
+    return apiCall<PartResponse>(`/api/parts/${partId}`);
   },
 
   likePart: async (partId: number): Promise<void> => {

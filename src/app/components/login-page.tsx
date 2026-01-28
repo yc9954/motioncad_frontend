@@ -7,6 +7,14 @@ import { authApi, getOAuth2Url } from "@/lib/api";
 import { toast } from "sonner";
 import { FaGoogle } from 'react-icons/fa';
 
+// Google OAuth URL 생성
+const getGoogleOAuthUrl = (): string => {
+  // OAuth는 세션 유지를 위해 항상 직접 백엔드 URL 사용 (프록시 사용 안 함)
+  // 프록시를 사용하면 세션이 유지되지 않아 authorization_request_not_found 에러 발생
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://0590d2abeade.ngrok-free.app';
+  return `${apiBaseUrl}/oauth2/authorization/google`;
+};
+
 interface LoginPageProps {
   onLoginSuccess?: () => void;
   onNavigateToSignup?: () => void;
@@ -46,7 +54,9 @@ export function LoginPage({ onLoginSuccess, onNavigateToSignup }: LoginPageProps
   };
 
   const handleGoogleLogin = () => {
-    window.location.href = getOAuth2Url("google");
+    const oauthUrl = getGoogleOAuthUrl();
+    console.log('[Login] Google OAuth URL:', oauthUrl);
+    window.location.href = oauthUrl;
   };
 
   return (

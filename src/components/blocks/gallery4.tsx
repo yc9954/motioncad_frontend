@@ -35,6 +35,9 @@ const Gallery4 = ({
   const [canScrollNext, setCanScrollNext] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
 
+  // 무한 루프를 위해 아이템을 여러 번 복제
+  const duplicatedItems = [...items, ...items, ...items];
+
   useEffect(() => {
     if (!carouselApi) {
       return;
@@ -51,6 +54,15 @@ const Gallery4 = ({
     };
   }, [carouselApi]);
 
+  // 초기 위치를 중간 세트로 설정 (무한 루프처럼 보이도록)
+  useEffect(() => {
+    if (!carouselApi || items.length === 0) {
+      return;
+    }
+    // 중간 세트의 시작 위치로 이동
+    carouselApi.scrollTo(items.length, true);
+  }, [carouselApi, items.length]);
+
   // 자동 슬라이드 (무한 루프)
   useEffect(() => {
     if (!carouselApi) {
@@ -59,12 +71,18 @@ const Gallery4 = ({
 
     const autoplayInterval = setInterval(() => {
       carouselApi.scrollNext();
+      
+      // 마지막 세트의 끝에 도달하면 첫 번째 세트의 시작으로 부드럽게 이동
+      const currentIndex = carouselApi.selectedScrollSnap();
+      if (currentIndex >= items.length * 2) {
+        carouselApi.scrollTo(items.length, false);
+      }
     }, 3000); // 3초마다 다음 슬라이드로 이동
 
     return () => {
       clearInterval(autoplayInterval);
     };
-  }, [carouselApi]);
+  }, [carouselApi, items.length]);
 
   return (
     <section className="pt-6 pb-2">
@@ -108,18 +126,21 @@ const Gallery4 = ({
           opts={{
             loop: true, // 무한 루프 활성화
             align: "start",
+            skipSnaps: false,
+            dragFree: false,
             breakpoints: {
               "(max-width: 768px)": {
                 dragFree: true,
               },
             },
           }}
+          className="w-full"
         >
-          <CarouselContent className="ml-0 2xl:ml-[max(8rem,calc(50vw-700px))] 2xl:mr-[max(0rem,calc(50vw-700px))]">
-            {items.map((item) => (
+          <CarouselContent className="-ml-0 2xl:ml-[max(8rem,calc(50vw-700px))] 2xl:mr-[max(0rem,calc(50vw-700px))]">
+            {duplicatedItems.map((item, index) => (
               <CarouselItem
-                key={item.id}
-                className="max-w-[280px] pl-[16px] lg:max-w-[300px]"
+                key={`${item.id}-${index}`}
+                className="max-w-[280px] pl-[16px] lg:max-w-[300px] basis-[280px] lg:basis-[300px]"
               >
                 <a href={item.href} className="group rounded-xl">
                   <div className="group relative h-full min-h-[20rem] max-w-full overflow-hidden rounded-xl md:aspect-[5/4] lg:aspect-[16/9] border border-border bg-card shadow-lg cursor-pointer transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-2">
